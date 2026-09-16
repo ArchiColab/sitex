@@ -15,7 +15,7 @@ atmospheric correction and per-pixel emissivity.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import geopandas as gpd
 import numpy as np
@@ -88,7 +88,7 @@ def resolve_band_paths(scene_info: dict, scene_info_path: Path) -> dict:
     directory plus the file's own name is both correct and portable.
     """
     scene_dir = Path(scene_info_path).parent
-    return {band: scene_dir / Path(path).name for band, path in scene_info["band_paths"].items()}
+    return {band: scene_dir / PureWindowsPath(path).name for band, path in scene_info["band_paths"].items()}
 
 
 def bbox_to_geojson(west: float, south: float, east: float, north: float) -> dict:
