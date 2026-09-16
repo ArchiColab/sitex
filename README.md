@@ -1,7 +1,7 @@
 # SiteX
 
 Open-data site analysis toolkit for urban design students working in **data-scarce
-contexts** — secondary cities with no municipal GIS portal, no cadastral layer, no
+contexts**, for e.g. secondary cities in a developing country with no municipal GIS portal, no cadastral layer, no
 official DTM. Extracted from a set of case-study notebooks built for Pleiku, Gia Lai,
 Vietnam, and written to generalize to any geocodable place (Vietnam alone spans UTM
 zones 48N and 49N, split at 108°E — a built-in stress test for anything hardcoding a
