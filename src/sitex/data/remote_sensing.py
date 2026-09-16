@@ -65,7 +65,8 @@ def download_dem(aoi: AOI, dem_dir: Path, api_key: str | None = None) -> tuple[P
 # ── Sentinel-2 (OpenEO / CDSE) ───────────────────────────────────────────────────
 
 S2_COLLECTION = "SENTINEL2_L2A"
-S2_BANDS = ["B04", "B08", "B11"]  # Red, NIR, SWIR
+S2_BANDS = ["B04", "B08", "B11"]  # Red, NIR, SWIR — NDVI/NDBI (change detection, UHI)
+S2_WATER_BANDS = ["B03", "B08"]  # Green, NIR — NDWI (flood risk)
 S2_MAX_CLOUD = 10
 
 
@@ -79,8 +80,12 @@ def connect_cdse():
     return connection
 
 
-def download_sentinel2_annual_composite(conn, aoi: AOI, year: int, output_path: Path) -> Path:
-    """Server-side median composite for one year. 3-band GeoTIFF: 1=B04, 2=B08, 3=B11.
+def download_sentinel2_composite(
+    conn, aoi: AOI, start_date: str, end_date: str, bands: list[str], output_path: Path,
+    max_cloud: int = S2_MAX_CLOUD,
+) -> Path:
+    """Server-side median composite over ``[start_date, end_date)``. Band order in the
+    output GeoTIFF matches ``bands`` (band 1 = ``bands[0]``, etc).
 
     Forces the output CRS to ``aoi.local_epsg`` via ``resample_spatial`` instead of the
     backend's default, which returns whichever UTM tile the AOI happens to fall in —
@@ -90,14 +95,21 @@ def download_sentinel2_annual_composite(conn, aoi: AOI, year: int, output_path: 
     cube = conn.load_collection(
         S2_COLLECTION,
         spatial_extent={"west": west, "south": south, "east": east, "north": north},
-        temporal_extent=[f"{year}-01-01", f"{year}-12-31"],
-        bands=S2_BANDS,
-        max_cloud_cover=S2_MAX_CLOUD,
+        temporal_extent=[start_date, end_date],
+        bands=bands,
+        max_cloud_cover=max_cloud,
     )
     cube = cube.resample_spatial(resolution=10, projection=aoi.local_epsg)
     output_path = Path(output_path)
     cube.reduce_temporal("median").download(str(output_path), format="GTiff")
     return output_path
+
+
+def download_sentinel2_annual_composite(conn, aoi: AOI, year: int, output_path: Path) -> Path:
+    """Server-side median composite for one year. 3-band GeoTIFF: 1=B04, 2=B08, 3=B11."""
+    return download_sentinel2_composite(
+        conn, aoi, f"{year}-01-01", f"{year}-12-31", S2_BANDS, output_path,
+    )
 
 
 # ── Landsat 8/9 (STAC, Level-1 -> Level-2 fallback) ──────────────────────────────
