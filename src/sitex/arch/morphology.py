@@ -474,6 +474,7 @@ def shift_to_local_origin(gdf: gpd.GeoDataFrame, origin_easting: float, origin_n
 
 
 def export_enriched_buildings(bldg: gpd.GeoDataFrame, out_path: Path) -> Path:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     select_export_columns(bldg).to_file(out_path, driver="GPKG")
     return out_path
 
@@ -487,6 +488,7 @@ def export_enriched_buildings_local_for_city(
     bldg: gpd.GeoDataFrame, city: CityConfig, filename: str | None = None
 ) -> Path:
     path = city.data_dir / "gdf" / (filename or f"{city.slug}_buildings_enriched_local.gpkg")
+    path.parent.mkdir(parents=True, exist_ok=True)
     local = shift_to_local_origin(select_export_columns(bldg), *city.origin)
     local.to_file(path, driver="GPKG")
     return path
