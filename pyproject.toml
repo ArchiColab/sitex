@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sitex"
+version = "0.1.0"
+description = "Open-data site analysis toolkit for urban design students working in data-scarce contexts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "pyproj>=3.7",
+    "numpy>=1.24",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+arch = [
+    "rioxarray>=0.15",
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "scipy>=1.11",
+    "ezdxf>=1.1",
+    "matplotlib>=3.8",
+    "folium>=0.15",
+    "momepy>=0.7",
+    "networkx>=3.0",
+    "rasterio>=1.3",
+    "trimesh>=4.0",
+]
+env = [
+    "rioxarray>=0.15",
+    "scipy>=1.11",
+    "numpy>=1.24",
+    "rasterio>=1.3",
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "folium>=0.15",
+    "matplotlib>=3.8",
+    "scikit-learn>=1.3",
+]
+network = [
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "networkx>=3.0",
+    "folium>=0.15",
+    "matplotlib>=3.8",
+    "ezdxf>=1.1",
+    "pandas>=2.0",
+    "osmnx>=1.9",
+    "h3>=4.0",
+    "inequality>=1.0",
+    "scipy>=1.11",
+    "numpy>=1.24",
+    "leafmap>=0.30",
+    "ipyleaflet>=0.19",
+    "ipywidgets>=8.0",
+]
+viz = [
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "rasterio>=1.3",
+    "folium>=0.15",
+    "matplotlib>=3.8",
+    "scipy>=1.11",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "trimesh>=4.0",
+    "plotly>=5.20",
+]
+data = [
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "rasterio>=1.3",
+    "osmnx>=1.9",
+    "leafmap>=0.30",
+    "ipyleaflet>=0.19",
+    "ipywidgets>=8.0",
+    "bmi-topography>=0.8",
+    "openeo>=0.31",
+    "pystac-client>=0.8",
+    "planetary-computer>=1.0",
+    "duckdb>=1.0",
+    "fiona>=1.9",
+    "folium>=0.15",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sitex"]
