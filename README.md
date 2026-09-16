@@ -10,7 +10,7 @@ CRS).
 ## Install
 
 ```bash
-pip install git+https://github.com/<you>/sitex.git
+pip install git+https://github.com/ArchiColab/sitex.git
 ```
 
 ## Status
