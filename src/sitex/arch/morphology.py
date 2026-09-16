@@ -488,10 +488,8 @@ def export_enriched_buildings_local_for_city(
     bldg: gpd.GeoDataFrame, city: CityConfig, filename: str | None = None
 ) -> Path:
     path = city.data_dir / "gdf" / (filename or f"{city.slug}_buildings_enriched_local.gpkg")
-    path.parent.mkdir(parents=True, exist_ok=True)
     local = shift_to_local_origin(select_export_columns(bldg), *city.origin)
-    local.to_file(path, driver="GPKG")
-    return path
+    return export_enriched_buildings(local, path)
 
 
 # ── 8. 3D massing ────────────────────────────────────────────────────────────
