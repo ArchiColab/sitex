@@ -300,9 +300,24 @@ def build_combined_map(results: dict, boundary_poly, category_colors: dict, max_
 
 # ── 5. Interactive "what if a new facility opened here?" ─────────────────────
 
+def _first_available_basemap(names: list[str]) -> str:
+    """First of ``names`` that this leafmap version offers, else the last one.
+
+    Newer leafmap releases (the one Colab installs) dropped some basemap names, and
+    ``add_basemap`` then prints the whole list of valid names and adds nothing."""
+    try:
+        from leafmap.basemaps import get_xyz_dict
+
+        available = set(get_xyz_dict())
+    except Exception:
+        return names[-1]
+    return next((n for n in names if n in available), names[-1])
+
+
 def build_picker_map(boundary_poly, zoom: int = 14):
-    """Click-to-place map for a candidate facility site: CartoDB Positron +
-    Esri Satellite basemaps, with only the marker draw tool enabled so a click
+    """Click-to-place map for a candidate facility site: a light street basemap
+    (CartoDB Positron, or Esri World Street Map where Positron is not offered) +
+    Esri World Imagery, with only the marker draw tool enabled so a click
     always yields a single point rather than a shape. Read the pick back with
     ``picked_point(m)`` once the student has clicked the marker tool and then a
     spot on the map."""
@@ -313,8 +328,8 @@ def build_picker_map(boundary_poly, zoom: int = 14):
     enable_widgets()
     center = [boundary_poly.centroid.y, boundary_poly.centroid.x]
     m = leafmap.Map(center=center, zoom=zoom)
-    m.add_basemap("CartoDB.Positron")
-    m.add_basemap("SATELLITE")
+    m.add_basemap(_first_available_basemap(["CartoDB.Positron", "Esri.WorldStreetMap"]))
+    m.add_basemap("Esri.WorldImagery")
 
     for shape in ("polyline", "polygon", "rectangle", "circle"):
         setattr(m.draw_control, shape, {})

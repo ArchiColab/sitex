@@ -292,3 +292,17 @@ def test_compute_green_accessibility_zero_at_green_space_node():
     grid = ga.compute_green_accessibility(G, boundary, green, walk_time_minutes=15, h3_resolution=12)
     assert (grid["access_time_min"] < float("inf")).any()
     assert grid["access_time_min"].min() == pytest.approx(0.0, abs=1.0)
+
+
+def test_first_available_basemap_falls_back(monkeypatch):
+    import sys
+    import types
+
+    from sitex.network import poi_accessibility as pa
+
+    fake = types.ModuleType("leafmap.basemaps")
+    fake.get_xyz_dict = lambda: {"Esri.WorldStreetMap": 1, "Esri.WorldImagery": 1}
+    monkeypatch.setitem(sys.modules, "leafmap.basemaps", fake)
+    assert pa._first_available_basemap(["CartoDB.Positron", "Esri.WorldStreetMap"]) == "Esri.WorldStreetMap"
+    fake.get_xyz_dict = lambda: {"CartoDB.Positron": 1}
+    assert pa._first_available_basemap(["CartoDB.Positron", "Esri.WorldStreetMap"]) == "CartoDB.Positron"

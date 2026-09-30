@@ -140,24 +140,118 @@ def _bbox_from_point(lon: float, lat: float, dist_m: float) -> tuple[float, floa
     return tuple(box_ll.bounds)  # (west, south, east, north)
 
 
+_COLAB_MAP_HTML = """
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+<div id="__ID__status" style="font:14px sans-serif;margin:4px 0"><i>Click two opposite corners to draw a custom AOI — yellow shows the default box, kept if you don't draw anything.</i></div>
+<div id="__ID__" style="height:480px;width:100%;cursor:crosshair"></div>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  var cfg = __CONFIG__;
+  var statusEl = document.getElementById("__ID__status");
+  function report() {
+    var args = Array.prototype.slice.call(arguments);
+    try { google.colab.kernel.invokeFunction(cfg.callback, args, {}); }
+    catch (err) { statusEl.innerHTML = "<b>Could not reach Python: " + err + "</b>"; }
+  }
+  var map = L.map("__ID__", {scrollWheelZoom: true}).setView(cfg.center, cfg.zoom);
+  L.tileLayer(cfg.tiles, {attribution: cfg.attribution, maxZoom: 19}).addTo(map);
+  var d = cfg.defaultBbox;
+  L.rectangle([[d[1], d[0]], [d[3], d[2]]], {color: "#FFFF00", weight: 2, fillOpacity: 0.08}).addTo(map);
+  var first = null, dots = [], preview = null, drawn = null;
+  function clear() {
+    dots.forEach(function (x) { map.removeLayer(x); }); dots = [];
+    if (preview) { map.removeLayer(preview); preview = null; }
+    if (drawn) { map.removeLayer(drawn); drawn = null; }
+  }
+  map.on("mousemove", function (e) {
+    if (!first) return;
+    var b = [[first.lat, first.lng], [e.latlng.lat, e.latlng.lng]];
+    if (preview) preview.setBounds(b);
+    else preview = L.rectangle(b, {color: "#6bc2e5", weight: 2, fillOpacity: 0.1}).addTo(map);
+  });
+  map.on("click", function (e) {
+    if (!first) {
+      clear();
+      first = e.latlng;
+      dots.push(L.circleMarker(first, {radius: 4, color: "red"}).addTo(map));
+      report();
+      statusEl.innerHTML = "<i>Click 1/2 — click the opposite corner</i>";
+      return;
+    }
+    var a = first, b = e.latlng;
+    first = null;
+    clear();
+    var w = Math.min(a.lng, b.lng), s = Math.min(a.lat, b.lat);
+    var ee = Math.max(a.lng, b.lng), n = Math.max(a.lat, b.lat);
+    drawn = L.rectangle([[s, w], [n, ee]], {color: "red", weight: 2, fillOpacity: 0.15}).addTo(map);
+    report(w, s, ee, n);
+    statusEl.innerHTML = "<i>Custom AOI drawn — click again to redraw, or run the next cell to confirm.</i>";
+  });
+})();
+</script>
+"""
+
+
+class _ColabAOIMap:
+    """The site-drawing map for Colab: a plain Leaflet page that reports the two clicks
+    back to Python through Colab's own callback, so it needs no widget support."""
+
+    def __init__(self, html: str, drawn_bbox: dict[str, Any]):
+        self._html = html
+        self._sitex_drawn_bbox = drawn_bbox  # read back by resolve_aoi_from_map
+
+    def _repr_html_(self) -> str:
+        return self._html
+
+
+def _build_aoi_map_colab(center_lat, center_lon, zoom, default_bbox):
+    import json
+    import uuid
+
+    from google.colab import output
+
+    from sitex.core.raster_viz import SATELLITE_ATTR, SATELLITE_TILES
+
+    drawn_bbox: dict[str, Any] = {"value": None}
+
+    def _on_draw(*args):
+        drawn_bbox["value"] = tuple(float(v) for v in args) if len(args) == 4 else None
+
+    uid = uuid.uuid4().hex[:8]
+    callback = f"sitex_aoi_{uid}"
+    output.register_callback(callback, _on_draw)
+
+    config = json.dumps({
+        "callback": callback, "center": [center_lat, center_lon], "zoom": zoom,
+        "tiles": SATELLITE_TILES, "attribution": SATELLITE_ATTR,
+        "defaultBbox": list(default_bbox),
+    })
+    html = _COLAB_MAP_HTML.replace("__CONFIG__", config).replace("__ID__", f"sitex_map_{uid}")
+    return _ColabAOIMap(html, drawn_bbox), default_bbox
+
+
 def build_aoi_map(center_lat: float, center_lon: float, dist_m: float = 1000, zoom: int = 14):
     """Method 2: an interactive map for drawing a rectangle AOI by clicking two opposite
-    corners — plain ``ipyleaflet``, no ``leafmap`` (see module docstring for why).
+    corners — plain ``ipyleaflet``, no ``leafmap`` (see module docstring for why). In
+    Google Colab, which does not reliably show ipyleaflet widgets, it is a plain Leaflet
+    page instead; the two clicks reach Python through Colab's callback.
 
-    Returns ``(widget, default_bbox)`` — display the widget, click two opposite corners
+    Returns ``(map, default_bbox)`` — display the map, click two opposite corners
     to draw a custom AOI (leaving it undrawn keeps the yellow default box), then pass
     both to :func:`resolve_aoi_from_map`.
     """
+    import sys
     import time as _time
+
+    default_bbox = _bbox_from_point(center_lon, center_lat, dist_m)
+    if "google.colab" in sys.modules:
+        return _build_aoi_map_colab(center_lat, center_lon, zoom, default_bbox)
 
     import ipywidgets as widgets
     from ipyleaflet import Circle, Map, Polygon as LeafletPolygon, TileLayer
 
-    from sitex.core.colab import enable_widgets
     from sitex.core.raster_viz import SATELLITE_ATTR, SATELLITE_TILES
-
-    enable_widgets()
-    default_bbox = _bbox_from_point(center_lon, center_lat, dist_m)
 
     m = Map(center=[center_lat, center_lon], zoom=zoom, scroll_wheel_zoom=True)
     m.add(TileLayer(url=SATELLITE_TILES, attribution=SATELLITE_ATTR, name="Satellite"))

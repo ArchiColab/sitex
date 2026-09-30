@@ -73,3 +73,40 @@ def test_resolve_aoi_from_map_single_click_does_not_produce_a_box():
 
     aoi = aoi_lib.resolve_aoi_from_map(ui, default_bbox, slug="single_click_test")
     assert tuple(aoi.bbox) == pytest.approx(tuple(default_bbox))  # falls back, not a degenerate box
+
+
+def _fake_colab(monkeypatch):
+    import sys
+    import types
+
+    registered = {}
+    output = types.SimpleNamespace(register_callback=lambda name, fn: registered.update({name: fn}))
+    fake_colab = types.ModuleType("google.colab")
+    fake_colab.output = output
+    fake_google = types.ModuleType("google")
+    fake_google.colab = fake_colab
+    monkeypatch.setitem(sys.modules, "google", fake_google)
+    monkeypatch.setitem(sys.modules, "google.colab", fake_colab)
+    return registered
+
+
+def test_build_aoi_map_in_colab_reports_clicks_through_the_callback(monkeypatch):
+    from sitex.data import aoi
+
+    registered = _fake_colab(monkeypatch)
+    site_map, default_bbox = aoi.build_aoi_map(13.98, 108.0, dist_m=1000, zoom=16)
+
+    (callback,) = registered
+    assert callback in site_map._repr_html_()
+    assert "__ID__" not in site_map._repr_html_() and "__CONFIG__" not in site_map._repr_html_()
+
+    # nothing drawn: the default box is kept
+    assert aoi.resolve_aoi_from_map(site_map, default_bbox, slug="t").bbox == tuple(default_bbox)
+
+    # two clicks in the browser reach Python as (west, south, east, north)
+    registered[callback](108.01, 13.98, 108.02, 13.99)
+    assert aoi.resolve_aoi_from_map(site_map, default_bbox, slug="t").bbox == (108.01, 13.98, 108.02, 13.99)
+
+    # a new first click clears the drawn box again
+    registered[callback]()
+    assert aoi.resolve_aoi_from_map(site_map, default_bbox, slug="t").bbox == tuple(default_bbox)
