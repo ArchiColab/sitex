@@ -16,6 +16,7 @@ dependencies:
   - matplotlib
   - jupyterlab
   - ipywidgets
+  - pydeck            # 3D building view in 01-SITE-3D_Model
   - pip
   - pip:
       # SiteX and the rest of its dependencies (pure Python or wheels)
