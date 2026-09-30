@@ -1,0 +1,22 @@
+name: sitex
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  # Compiled geospatial stack: install from conda-forge, not pip
+  - geopandas
+  - rasterio
+  - shapely
+  - pyproj
+  - fiona
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - jupyterlab
+  - ipywidgets
+  - pip
+  - pip:
+      # SiteX and the rest of its dependencies (pure Python or wheels)
+      - "sitex[arch,env,network,viz,data] @ git+https://github.com/ArchiColab/sitex.git"
