@@ -88,6 +88,8 @@ data = [
     "duckdb>=1.0",
     "fiona>=1.9",
     "folium>=0.15",
+    "requests>=2.31",
+    "s2sphere>=0.2.5",     # Open Buildings S2 tokens (sitex.data.open_buildings)
 ]
 dev = [
     "pytest>=8.0",
