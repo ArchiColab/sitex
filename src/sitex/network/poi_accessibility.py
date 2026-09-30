@@ -308,6 +308,9 @@ def build_picker_map(boundary_poly, zoom: int = 14):
     spot on the map."""
     import leafmap
 
+    from sitex.core.colab import enable_widgets
+
+    enable_widgets()
     center = [boundary_poly.centroid.y, boundary_poly.centroid.x]
     m = leafmap.Map(center=center, zoom=zoom)
     m.add_basemap("CartoDB.Positron")

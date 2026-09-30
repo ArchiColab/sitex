@@ -153,8 +153,10 @@ def build_aoi_map(center_lat: float, center_lon: float, dist_m: float = 1000, zo
     import ipywidgets as widgets
     from ipyleaflet import Circle, Map, Polygon as LeafletPolygon, TileLayer
 
+    from sitex.core.colab import enable_widgets
     from sitex.core.raster_viz import SATELLITE_ATTR, SATELLITE_TILES
 
+    enable_widgets()
     default_bbox = _bbox_from_point(center_lon, center_lat, dist_m)
 
     m = Map(center=[center_lat, center_lon], zoom=zoom, scroll_wheel_zoom=True)
