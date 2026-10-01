@@ -285,6 +285,40 @@ def test_seg_nach_single_segment_is_zero():
     assert list(ss.seg_nach(G).values())[0] == pytest.approx(0.0)
 
 
+def test_seg_nach_metric_infinite_radius_equals_seg_nach():
+    G = _straight_then_turn()
+    metric = ss.seg_nach_metric(G)
+    plain = ss.seg_nach(G)
+    for seg_id, value in plain.items():
+        assert metric[seg_id] == pytest.approx(value)
+
+
+def test_seg_nach_metric_matches_hand_calculation_with_small_radius():
+    # Segments are 100 m long, so the average step between neighbours is 100 m.
+    # R150 reaches only direct neighbours: seg 0 sees {0, 1}, seg 1 sees {0, 1, 2},
+    # seg 2 sees {1, 2}. Least-angle routes inside each catchment:
+    #   origin 0: 0->1            choice: +1 on 0, 1;        depth 0
+    #   origin 1: 1->0, 1->2      choice: +1 on 1,0 and 1,2; depth 0 + 1 = 1
+    #   origin 2: 2->1            choice: +1 on 2, 1;        depth 1
+    # Choice = seg0: 2, seg1: 4, seg2: 2. Total depth = seg0: 0, seg1: 1, seg2: 1.
+    nach = ss.seg_nach_metric(_straight_then_turn(), radius_m=150)
+    assert nach[0] == pytest.approx(math.log(3) / math.log(3))
+    assert nach[1] == pytest.approx(math.log(5) / math.log(4))
+    assert nach[2] == pytest.approx(math.log(3) / math.log(4))
+
+
+def test_seg_nach_metric_choice_term_matches_angular_choice_metric(grid_streets):
+    # Guard against the two metric-radius functions drifting apart.
+    G = ss.gdf_to_nx_graph(ss.graph_to_segment_map(grid_streets), id_col="seg_id")
+    choice = ss.seg_angular_choice_metric(G, radius_m=300)
+    nach = ss.seg_nach_metric(G, radius_m=300)
+    for seg_id, ch in choice.items():
+        if ch == 0:
+            assert nach[seg_id] == pytest.approx(0.0)
+        else:
+            assert nach[seg_id] > 0
+
+
 def test_seg_norm_integration_is_0_to_1(grid_streets):
     seg_map = ss.graph_to_segment_map(grid_streets)
     G = ss.gdf_to_nx_graph(seg_map, id_col="seg_id")
@@ -301,18 +335,6 @@ def test_metrics_to_gdf_combines_dicts(grid_streets):
     result = ss.metrics_to_gdf(G, {"choice": choice, "integration": integ}, crs=seg_map.crs, id_col="seg_id")
     assert set(result.columns) >= {"seg_id", "choice", "integration", "geometry"}
     assert len(result) == G.number_of_edges()
-
-
-def test_compute_local_centre_index_near_one_when_r800_equals_rn():
-    gdf = pd.DataFrame({"choice_R800": [10.0], "choice_Rn": [10.0]})
-    lci = ss.compute_local_centre_index(gdf)
-    assert lci.iloc[0] == pytest.approx(1.0, abs=0.01)
-
-
-def test_compute_local_centre_index_low_when_rn_much_larger():
-    gdf = pd.DataFrame({"choice_R800": [1.0], "choice_Rn": [1000.0]})
-    lci = ss.compute_local_centre_index(gdf)
-    assert lci.iloc[0] < 0.5
 
 
 def test_style_by_metric_adds_color_and_width_columns(grid_streets):

@@ -486,6 +486,40 @@ def seg_nach(G: nx.Graph, radius: float = float("inf")) -> dict:
     return nach
 
 
+def seg_nach_metric(G: nx.Graph, radius_m: float = float("inf")) -> dict:
+    """NACH within a metric catchment radius (e.g. R800 = 800 m).
+
+    Same ``log(angular choice + 1) / log(angular total depth + 3)`` as ``seg_nach``,
+    but both terms are counted only over segments within ``radius_m`` metres of each
+    origin, with routes still chosen by least angle — the same convention as
+    ``seg_angular_choice_metric``. With an infinite radius it equals ``seg_nach``
+    (NACH Rn). Read the two together: high at R800 and low at Rn is a local
+    centre; low at R800 and high at Rn is a through route.
+    """
+    L, edge_info = _build_dual_graph(G)
+
+    L_metric = nx.Graph()
+    for eid in edge_info:
+        L_metric.add_node(eid)
+    for ei, ej in L.edges():
+        avg_len = (edge_info[ei]["length"] + edge_info[ej]["length"]) / 2
+        L_metric.add_edge(ei, ej, weight=avg_len)
+
+    choice = {node: 0.0 for node in L.nodes()}
+    total_depth = {node: 0.0 for node in L.nodes()}
+    for source in L.nodes():
+        metric_dist, _ = nx.single_source_dijkstra(L_metric, source, cutoff=radius_m, weight="weight")
+        sub = L.subgraph(metric_dist.keys())
+        ang_dist, ang_paths = nx.single_source_dijkstra(sub, source, weight="weight")
+        total_depth[source] = sum(d for t, d in ang_dist.items() if t != source)
+        for target, path in ang_paths.items():
+            if target == source or len(path) < 2:
+                continue
+            for seg_id in path:
+                choice[seg_id] += 1
+    return {eid: math.log(choice[eid] + 1) / math.log(total_depth[eid] + 3) for eid in L.nodes()}
+
+
 def seg_norm_integration(G: nx.Graph, radius: float = float("inf")) -> dict:
     """Min-max normalised segment integration, for cross-comparison."""
     integ = seg_integration(G, radius)
@@ -617,13 +651,6 @@ def add_metric_layer(m, gdf: gpd.GeoDataFrame, style_col: str, name: str, cmap: 
         ),
         show=show,
     ).add_to(m)
-
-
-def compute_local_centre_index(gdf: gpd.GeoDataFrame, choice_r800_col: str = "choice_R800", choice_rn_col: str = "choice_Rn") -> pd.Series:
-    """``log(Choice_R800 + 1) / log(Choice_Rn + 1)`` — near 1.0 means a segment
-    matters as much locally as globally (a genuine local centre); a low value
-    means it only matters city-wide (an arterial/bypass)."""
-    return (np.log1p(gdf[choice_r800_col]) / (np.log1p(gdf[choice_rn_col]) + 1e-6)).round(3)
 
 
 # ── 7. Scenario testing ──────────────────────────────────────────────────────
