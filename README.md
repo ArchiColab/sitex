@@ -63,6 +63,15 @@ pip install "sitex[network] @ git+https://github.com/ArchiColab/sitex.git"
 Available extras: `data`, `arch`, `env`, `network`, `viz`, `dev`. The dependencies are
 declared in `pyproject.toml`, so there is no separate `requirements.txt`.
 
+**For the street network** (the Geofabrik route, see
+[Data source decisions](#data-source-decisions)):
+[`osmium-tool`](https://osmcode.org/osmium-tool/) is a command-line program, not a Python
+package, so `pip` cannot install it and it is not in `pyproject.toml`. The conda
+environment above includes it. In an existing environment, install it with
+`conda install -c conda-forge osmium-tool`; in Google Colab, the notebook runs
+`apt-get install osmium-tool` for you. Without it only the street download fails; the
+other datasets are not affected.
+
 ## Architecture
 
 SiteX is a set of small modules in four layers. One place description feeds all of them,
@@ -137,6 +146,43 @@ pleiku.local_epsg    # 32649
 pleiku.origin        # (easting, northing) CAD/UCS base point, floored to 1000 m
 ```
 
+## Data source decisions
+
+Two data sources were changed after the evaluation, and the reasons are recorded here so
+that a reader of the notebooks knows why they differ from the first version.
+
+**Elevation: Copernicus GLO-30 instead of NASADEM.** The first version used NASADEM as the
+terrain model (DTM). A check on ten Vietnamese towns found negative heights in flat delta
+land. In NASADEM up to 11.1% of the pixels of one place (Long Xuyên) were below 0 m, while
+GLO-30 had at most 0.4% negative pixels in nine of the ten places. Where NASADEM was
+negative it lay 3 to 12 m below GLO-30, which in flat land is similar in size to the
+terrain's own relief. Where the terrain has relief, as on the Pleiku plateau, the two models agree
+closely. The check compares two sources; it is not a validation against measured heights,
+so neither model is ground truth. GLO-30 is used because it does not show this artefact.
+It is downloaded through OpenTopography with the same API key as before, and the AW3D30
+surface model is unchanged. The file is now `dem/dtm_glo30.tif` (before:
+`dem/dtm_nasadem.tif`). A few modules and notebooks still mention or default to the old
+file name, for example `arch.morphology` and the 3D Model notebook; they are switched one
+module at a time.
+
+**Streets: a Geofabrik extract instead of Overpass.** OSM streets used to be downloaded
+from a public Overpass server through OSMnx. Those servers are shared services with rate
+limits, and they can become unreachable: during testing, connections to `overpass-api.de`
+timed out and its mirror `overpass.private.coffee` accepted connections but did not answer
+within 180 s. Very large boundaries can also exceed what an Overpass server accepts in one
+query. The course notebook therefore downloads the OSM extract of the whole country from
+[Geofabrik](https://download.geofabrik.de/) once (for Vietnam about 330 MB, updated daily),
+crops it to the boundary or, for a drawn rectangle, to its box with `osmium-tool`, and
+builds the `drive`, `walk` and `drive_service` street graphs from the cropped file. After
+the download no query depends on a server, and the size of the site does not matter.
+The cost is the one large download, data that can be up to a day older than the live map,
+and the extra program to install (see [Install](#install)). For an initial site analysis
+this is sufficient. The Overpass function `download_street_networks` is still in
+`sitex.data.street_network` next to `street_networks_from_geofabrik`. The Geofabrik route
+was tested on one ward in Hà Nội with the full Vietnam file (download about 4.5 minutes,
+crop and graphs a few seconds); it has not yet been compared with an Overpass result or
+run in Google Colab.
+
 ## Data sources and licences
 
 The MIT licence of this repository covers the **code only**. SiteX does not ship the
@@ -155,7 +201,9 @@ attribution the provider asks for.
 | ESA WorldCover 10 m 2021 | `data.landcover` | CC BY 4.0 | © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium |
 | Sentinel-2 (Copernicus Data Space) | `data.remote_sensing` | Copernicus open data terms | Contains modified Copernicus Sentinel data |
 | Landsat 8/9 Collection 2 Level-2 (Planetary Computer) | `data.remote_sensing` | USGS open data policy | Credit USGS/NASA Landsat |
-| NASADEM (DTM) and AW3D30 (DSM) | `data.remote_sensing` | NASA open data; JAXA terms of use for AW3D30 | Read the JAXA terms before redistributing tiles |
+| Copernicus DEM GLO-30 (DTM), via OpenTopography | `data.remote_sensing` | Copernicus DEM free licence | Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The licence also asks for a liability notice when you distribute the data; read it at the provider |
+| AW3D30 (DSM) | `data.remote_sensing` | JAXA terms of use | Read the JAXA terms before redistributing tiles |
+| OpenStreetMap extract from Geofabrik (streets) | `data.street_network` | ODbL | © OpenStreetMap contributors; extracts by Geofabrik GmbH |
 
 Licence details for these datasets were read from the providers' own pages, and
 providers change them. The provider's page is the reference, not this table. If you

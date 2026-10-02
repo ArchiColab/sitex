@@ -23,7 +23,7 @@ from sitex.data.aoi import AOI
 # ── DEM (OpenTopography) ───────────────────────────────────────────────────────
 
 def download_dem(aoi: AOI, dem_dir: Path, api_key: str | None = None) -> tuple[Path, Path]:
-    """Download NASADEM (DTM, bare-earth) + AW3D30 (DSM, top surface) for ``aoi``.
+    """Download Copernicus GLO-30 (DTM, 30 m elevation model) + AW3D30 (DSM, top surface) for ``aoi``.
 
     Reads ``OPENTOPOGRAPHY_API_KEY`` from the environment if ``api_key`` isn't passed —
     get a free key at https://portal.opentopography.org/. Raises ``ValueError`` rather
@@ -44,12 +44,18 @@ def download_dem(aoi: AOI, dem_dir: Path, api_key: str | None = None) -> tuple[P
     dem_dir.mkdir(parents=True, exist_ok=True)
     west, south, east, north = aoi.bbox
 
-    nasadem = Topography(
-        dem_type="NASADEM", south=south, north=north, west=west, east=east,
+    glo30 = Topography(
+        dem_type="COP30", south=south, north=north, west=west, east=east,
         output_format="GTiff", cache_dir="cache",
     )
-    dtm_out = dem_dir / "dtm_nasadem.tif"
-    shutil.copy2(nasadem.fetch(), dtm_out)
+    dtm_out = dem_dir / "dtm_glo30.tif"
+    shutil.copy2(glo30.fetch(), dtm_out)
+    # GLO-30 comes without a no-data value, and sea and rivers are 0 m. Declare an unused
+    # no-data value so readers that treat "no no-data value" as "0 = missing" keep them.
+    import rasterio
+
+    with rasterio.open(dtm_out, "r+", IGNORE_COG_LAYOUT_BREAK="YES") as ds:  # file is a COG; a streaming layout is not needed here
+        ds.nodata = -9999.0
 
     aw3d30 = Topography(
         dem_type="AW3D30", south=south, north=north, west=west, east=east,

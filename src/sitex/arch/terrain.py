@@ -102,7 +102,7 @@ def generate_contours(
 
 def generate_contours_for_city(
     city: CityConfig,
-    dtm_filename: str = "dtm_nasadem.tif",
+    dtm_filename: str = "dtm_glo30.tif",
     **kwargs,
 ) -> gpd.GeoDataFrame:
     """``generate_contours()`` reading ``{city.data_dir}/dem/{dtm_filename}``."""

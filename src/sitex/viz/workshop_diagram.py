@@ -109,7 +109,7 @@ class WorkshopDiagramConfig:
 
     # environment stack
     buildings: LayerStyle = field(default_factory=lambda: LayerStyle("Buildings footprint\n(Overture)", "#3a4a5c", 0.9))
-    dem: LayerStyle = field(default_factory=lambda: LayerStyle("DEM — terrain hillshade\n(NASADEM)", alpha=0.95, cmap="gray"))
+    dem: LayerStyle = field(default_factory=lambda: LayerStyle("DEM — terrain hillshade\n(Copernicus GLO-30)", alpha=0.95, cmap="gray"))
     landcover: LayerStyle = field(default_factory=lambda: LayerStyle("Land cover\n(ESA WorldCover 2021)", alpha=0.95))
     canopy: LayerStyle = field(default_factory=lambda: LayerStyle("Canopy height\n(Meta/WRI CHM, 1 m)", alpha=0.95, cmap="Greens"))
     ndvi: LayerStyle = field(default_factory=lambda: LayerStyle("NDVI — vegetation index\n(Sentinel-2)", alpha=0.95, cmap="RdYlGn"))
@@ -163,7 +163,7 @@ def _places_path(city: CityConfig) -> Path:
 
 
 def _dem_path(city: CityConfig) -> Path:
-    return city.data_dir / "dem" / "dtm_nasadem.tif"
+    return city.data_dir / "dem" / "dtm_glo30.tif"
 
 
 def _landcover_path(city: CityConfig) -> Path:

@@ -17,6 +17,7 @@ dependencies:
   - jupyterlab
   - ipywidgets
   - pydeck            # 3D building view in 01-SITE-3D_Model
+  - osmium-tool       # program (not a Python package) that crops the Geofabrik extract for the streets
   - pip
   - pip:
       # SiteX and the rest of its dependencies (pure Python or wheels)

@@ -1,6 +1,6 @@
 """Terrain — canopy height, hillshade, and exploratory flood inundation from a DTM/DSM pair.
 
-Reads the same ``dtm_nasadem.tif`` /
+Reads the same ``dtm_glo30.tif`` /
 ``dsm_aw3d30.tif`` pair as ``sitex.arch.terrain`` (DEM Contour) but asks a
 different question of it: not the ground's shape, but what's above it (CHM)
 and where water would collect (flood fill).
@@ -27,7 +27,7 @@ def load_dtm_dsm(dtm_path: Path, dsm_path: Path) -> tuple[xr.DataArray, xr.DataA
 
 
 def load_dtm_dsm_for_city(
-    city: CityConfig, dtm_filename: str = "dtm_nasadem.tif", dsm_filename: str = "dsm_aw3d30.tif"
+    city: CityConfig, dtm_filename: str = "dtm_glo30.tif", dsm_filename: str = "dsm_aw3d30.tif"
 ) -> tuple[xr.DataArray, xr.DataArray]:
     return load_dtm_dsm(city.data_dir / "dem" / dtm_filename, city.data_dir / "dem" / dsm_filename)
 
@@ -72,8 +72,8 @@ def find_lowest_point(dtm: xr.DataArray):
     """Return ``(seed_rc, seed_lat, seed_lon, elev_min)`` — the lowest DTM cell,
     used as the flood-fill seed (the most flood-prone starting point)."""
     arr = np.where(np.isnan(dtm.values), np.inf, dtm.values.astype(float))
-    elev_min = int(np.nanmin(arr[arr != np.inf]))
-    seed_rc = tuple(zip(*np.where(arr == elev_min)))[0]
+    seed_rc = tuple(int(i) for i in np.unravel_index(np.argmin(arr), arr.shape))  # first lowest cell
+    elev_min = int(np.floor(arr[seed_rc]))  # whole metres, rounded down (the DEM may have decimals)
     seed_lat = float(dtm.y[seed_rc[0]])
     seed_lon = float(dtm.x[seed_rc[1]])
     return seed_rc, seed_lat, seed_lon, elev_min
