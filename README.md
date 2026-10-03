@@ -151,19 +151,33 @@ pleiku.origin        # (easting, northing) CAD/UCS base point, floored to 1000 m
 Two data sources were changed after the evaluation, and the reasons are recorded here so
 that a reader of the notebooks knows why they differ from the first version.
 
-**Elevation: Copernicus GLO-30 instead of NASADEM.** The first version used NASADEM as the
+**Elevation: GEDTM30 as the terrain model.** The first version used NASADEM as the
 terrain model (DTM). A check on ten Vietnamese towns found negative heights in flat delta
 land. In NASADEM up to 11.1% of the pixels of one place (Long Xuyên) were below 0 m, while
-GLO-30 had at most 0.4% negative pixels in nine of the ten places. Where NASADEM was
+Copernicus GLO-30 had at most 0.4% negative pixels in nine of the ten places. Where NASADEM was
 negative it lay 3 to 12 m below GLO-30, which in flat land is similar in size to the
-terrain's own relief. Where the terrain has relief, as on the Pleiku plateau, the two models agree
-closely. The check compares two sources; it is not a validation against measured heights,
-so neither model is ground truth. GLO-30 is used because it does not show this artefact.
-It is downloaded through OpenTopography with the same API key as before, and the AW3D30
-surface model is unchanged. The file is now `dem/dtm_glo30.tif` (before:
-`dem/dtm_nasadem.tif`). A few modules and notebooks still mention or default to the old
-file name, for example `arch.morphology` and the 3D Model notebook; they are switched one
-module at a time.
+terrain's own relief. The second version therefore used GLO-30. GLO-30 is, however, a
+surface model: it follows buildings and tree canopy. Over the mangrove forest of Cần Giờ it
+showed 15 to 20 m of "height" in a flat river delta. The current version uses GEDTM30
+(Ho et al., 2025), a 30 m terrain model estimated with machine learning from the Copernicus
+DEM, ALOS World 3D and about 30 billion lidar ground points (ICESat-2, GEDI). Compared with
+GLO-30 on three places:
+
+- **Cần Giờ** (mangrove delta): GEDTM30 is 8.0 m lower under mangrove on average and almost
+  equal over water and open ground. The surface is nearly flat, as the delta is.
+- **Pleiku** (highland city): GEDTM30 is about 1.5 m lower than GLO-30 in every land-cover class
+  (2.3 m under tree cover). The difference is close to a constant offset, and the height step
+  between neighbouring buildings is practically the same in both models.
+- **Hoàn Kiếm, Hà Nội** (dense old quarter): GEDTM30 is 1.1 m lower on average and up to about
+  5 m lower in places. The blocks still look rough, so building height is reduced but not removed.
+
+These are comparisons between models, not a validation against measured heights, so no model
+is ground truth. GEDTM30 is a machine-learning product, and OpenTopography advises checking it
+before use in critical applications. GEDTM30 is read for the bounding box from a public
+file at `s3.opengeohub.org`, so it needs no account or key, and no OpenTopography key is used
+anywhere in the course. The AW3D30 surface model was dropped: no notebook used it, since the canopy
+height comes from the Meta/WRI map. The file is now `dem/dtm_gedtm30.tif` (before:
+`dem/dtm_glo30.tif`, and `dem/dtm_nasadem.tif` in the first version).
 
 **Streets: a Geofabrik extract instead of Overpass.** OSM streets used to be downloaded
 from a public Overpass server through OSMnx. Those servers are shared services with rate
@@ -201,8 +215,7 @@ attribution the provider asks for.
 | ESA WorldCover 10 m 2021 | `data.landcover` | CC BY 4.0 | © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium |
 | Sentinel-2 (Copernicus Data Space) | `data.remote_sensing` | Copernicus open data terms | Contains modified Copernicus Sentinel data |
 | Landsat 8/9 Collection 2 Level-2 (Planetary Computer) | `data.remote_sensing` | USGS open data policy | Credit USGS/NASA Landsat |
-| Copernicus DEM GLO-30 (DTM), via OpenTopography | `data.remote_sensing` | Copernicus DEM free licence | Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The licence also asks for a liability notice when you distribute the data; read it at the provider |
-| AW3D30 (DSM) | `data.remote_sensing` | JAXA terms of use | Read the JAXA terms before redistributing tiles |
+| GEDTM30 terrain model (OpenGeoHub) | `data.remote_sensing` | CC BY 4.0 (as listed on the Zenodo record) | Ho et al. (2025), *PeerJ* 13, e19673; doi 10.5281/zenodo.18887460. Built in part from the Copernicus DEM and ALOS World 3D, whose own terms can also apply; read them at the providers. Machine-learning product: check it before critical use |
 | OpenStreetMap extract from Geofabrik (streets) | `data.street_network` | ODbL | © OpenStreetMap contributors; extracts by Geofabrik GmbH |
 
 Licence details for these datasets were read from the providers' own pages, and

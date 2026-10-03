@@ -82,7 +82,6 @@ data = [
     "leafmap>=0.30",
     "ipyleaflet>=0.19",
     "ipywidgets>=8.0",
-    "bmi-topography>=0.8",
     "openeo>=0.31",
     "pystac-client>=0.8",
     "planetary-computer>=1.0",

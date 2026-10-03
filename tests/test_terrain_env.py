@@ -3,7 +3,6 @@ import pytest
 import xarray as xr
 
 from sitex.env.terrain_env import (
-    compute_chm,
     compute_hillshade_gradient,
     find_lowest_point,
     flood_depth,
@@ -17,31 +16,6 @@ def _make_dataarray(values, x, y, crs="EPSG:4326"):
     da = xr.DataArray(values[np.newaxis, :, :], dims=("band", "y", "x"), coords={"band": [1], "y": y, "x": x})
     da.rio.write_crs(crs, inplace=True)
     return da.squeeze("band", drop=True)
-
-
-@pytest.fixture
-def dtm_dsm():
-    size = 10
-    x = np.linspace(108.000, 108.001, size)
-    y = np.linspace(13.990, 13.989, size)  # descending -> north-up
-    dtm_vals = np.full((size, size), 700.0)
-    dsm_vals = dtm_vals.copy()
-    dsm_vals[2:4, 2:4] = 715.0  # a 15 m "canopy" patch
-    dsm_vals[0, 0] = 699.0  # a registration artefact -> negative CHM before clipping
-    dtm = _make_dataarray(dtm_vals, x, y)
-    dsm = _make_dataarray(dsm_vals, x, y)
-    return dtm, dsm
-
-
-def test_compute_chm_matches_dsm_minus_dtm_and_clips_negatives(dtm_dsm):
-    dtm, dsm = dtm_dsm
-    chm, dsm_matched = compute_chm(dtm, dsm)
-
-    assert float(chm.max()) == pytest.approx(15.0)
-    assert float(chm.min()) >= 0.0  # the -1 m artefact must be clipped to 0
-    assert float(chm.sel(y=dtm.y[0], x=dtm.x[0])) == 0.0
-    assert chm.name == "CHM"
-    assert chm.attrs["units"] == "meters"
 
 
 def test_compute_hillshade_gradient_is_normalized():
@@ -60,6 +34,20 @@ def test_compute_hillshade_gradient_is_normalized():
     assert shade.max() == pytest.approx(1.0)
 
 
+def test_compute_hillshade_gradient_ignores_no_data_cells():
+    # Open sea is no-data (NaN) in the DTM; it must not turn the whole hillshade to NaN.
+    size = 10
+    x = np.linspace(108.000, 108.001, size)
+    y = np.linspace(13.990, 13.989, size)
+    xx, yy = np.meshgrid(np.arange(size), np.arange(size))
+    vals = 700.0 + 20.0 * np.exp(-((xx - 5) ** 2 + (yy - 5) ** 2) / 8)
+    vals[:, :2] = np.nan
+    shade = compute_hillshade_gradient(_make_dataarray(vals, x, y))
+    assert np.isfinite(shade).any()
+    assert np.nanmin(shade) == pytest.approx(0.0)
+    assert np.nanmax(shade) == pytest.approx(1.0)
+
+
 def test_find_lowest_point_locates_minimum():
     x = np.linspace(108.0, 108.001, 5)
     y = np.linspace(14.0, 13.999, 5)
@@ -75,7 +63,7 @@ def test_find_lowest_point_locates_minimum():
 
 
 def test_pixel_area_m2_close_to_expected_for_30m_dem():
-    # NASADEM-like resolution: ~0.0002778 deg/pixel (~30 m at the equator).
+    # 30 m resolution: ~0.0002778 deg/pixel (~30 m at the equator).
     size = 20
     step = 0.0002778
     x = 108.0 + np.arange(size) * step

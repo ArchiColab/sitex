@@ -604,7 +604,7 @@ def build_city_mesh_for_city(
     bldg: gpd.GeoDataFrame,
     bldg_local: gpd.GeoDataFrame,
     city: CityConfig,
-    dtm_filename: str = "dtm_nasadem.tif",
+    dtm_filename: str = "dtm_gedtm30.tif",
     filename: str | None = None,
 ):
     """Sample the DEM from ``bldg`` (true CRS) and write the mesh from ``bldg_local``

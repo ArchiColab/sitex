@@ -1,9 +1,8 @@
-"""Terrain — canopy height, hillshade, and exploratory flood inundation from a DTM/DSM pair.
+"""Terrain — hillshade and exploratory flood inundation from a DTM.
 
-Reads the same ``dtm_glo30.tif`` /
-``dsm_aw3d30.tif`` pair as ``sitex.arch.terrain`` (DEM Contour) but asks a
-different question of it: not the ground's shape, but what's above it (CHM)
-and where water would collect (flood fill).
+Reads the same ``dtm_gedtm30.tif`` as ``sitex.arch.terrain`` (DEM Contour) but asks a
+different question of it: not the ground's shape, but where water would collect
+(flood fill).
 """
 
 from __future__ import annotations
@@ -19,38 +18,13 @@ from ..core.config import CityConfig
 from ..core.geo import utm_epsg_from_lonlat
 
 
-def load_dtm_dsm(dtm_path: Path, dsm_path: Path) -> tuple[xr.DataArray, xr.DataArray]:
-    """Load a DTM/DSM GeoTIFF pair, each in its own native CRS (not yet reprojected)."""
-    dtm = rioxarray.open_rasterio(dtm_path, masked=True).squeeze("band", drop=True)
-    dsm = rioxarray.open_rasterio(dsm_path, masked=True).squeeze("band", drop=True)
-    return dtm, dsm
+def load_dtm(dtm_path: Path) -> xr.DataArray:
+    """Load a DTM GeoTIFF in its native CRS (not yet reprojected)."""
+    return rioxarray.open_rasterio(dtm_path, masked=True).squeeze("band", drop=True)
 
 
-def load_dtm_dsm_for_city(
-    city: CityConfig, dtm_filename: str = "dtm_glo30.tif", dsm_filename: str = "dsm_aw3d30.tif"
-) -> tuple[xr.DataArray, xr.DataArray]:
-    return load_dtm_dsm(city.data_dir / "dem" / dtm_filename, city.data_dir / "dem" / dsm_filename)
-
-
-# ── Canopy Height Model ──────────────────────────────────────────────────────
-
-def compute_chm(dtm: xr.DataArray, dsm: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
-    """Canopy/surface Height Model = DSM - DTM, negative values clipped to 0.
-
-    DTM (NASADEM, radar) captures bare earth; DSM (AW3D30, optical stereo)
-    captures the top surface — buildings, trees, structures. The DSM is
-    reprojected onto the DTM's own pixel grid first since the two rasters
-    may not share an identical grid. Negative results after that alignment
-    are sensor-noise/registration artefacts, not real canopy height, and are
-    clipped to 0. Returns ``(chm, dsm_matched)`` — the latter for a
-    DTM/DSM/CHM comparison plot.
-    """
-    dsm_matched = dsm.rio.reproject_match(dtm)
-    chm = (dsm_matched - dtm).clip(min=0)
-    chm.name = "CHM"
-    chm.attrs["units"] = "meters"
-    chm.attrs["description"] = "Canopy/Surface Height Model (DSM - DTM)"
-    return chm, dsm_matched
+def load_dtm_for_city(city: CityConfig, dtm_filename: str = "dtm_gedtm30.tif") -> xr.DataArray:
+    return load_dtm(city.data_dir / "dem" / dtm_filename)
 
 
 def compute_hillshade_gradient(dtm: xr.DataArray) -> np.ndarray:
@@ -63,7 +37,7 @@ def compute_hillshade_gradient(dtm: xr.DataArray) -> np.ndarray:
     arr = dtm.values.astype(float)
     dy, dx = np.gradient(arr)
     shade = -dx + dy
-    return (shade - shade.min()) / (shade.max() - shade.min())
+    return (shade - np.nanmin(shade)) / (np.nanmax(shade) - np.nanmin(shade))
 
 
 # ── Exploratory flood inundation (flood fill) ───────────────────────────────

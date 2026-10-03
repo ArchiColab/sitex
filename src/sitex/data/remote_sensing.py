@@ -8,8 +8,6 @@ regardless of which AOI method produced it.
 from __future__ import annotations
 
 import json
-import os
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -20,51 +18,65 @@ from shapely.geometry import shape
 
 from sitex.data.aoi import AOI
 
-# ── DEM (OpenTopography) ───────────────────────────────────────────────────────
+# ── DEM (GEDTM30 terrain model) ─────────────────────────────────────────────────
 
-def download_dem(aoi: AOI, dem_dir: Path, api_key: str | None = None) -> tuple[Path, Path]:
-    """Download Copernicus GLO-30 (DTM, 30 m elevation model) + AW3D30 (DSM, top surface) for ``aoi``.
+GEDTM30_URL = (
+    "https://s3.opengeohub.org/global/dtm/v1.2/"
+    "gedtm_rf_m_30m_s_20060101_20151231_go_epsg.4326.3855_v1.2.tif"
+)
+DEM_NODATA = -9999.0
 
-    Reads ``OPENTOPOGRAPHY_API_KEY`` from the environment if ``api_key`` isn't passed —
-    get a free key at https://portal.opentopography.org/. Raises ``ValueError`` rather
-    than silently hitting OpenTopography with a placeholder key.
+
+def download_gedtm30(aoi: AOI, dtm_out: Path) -> Path:
+    """Read GEDTM30 (30 m bare-earth terrain model) for ``aoi`` and save it as a GeoTIFF.
+
+    GEDTM30 is a machine-learning product: it estimates the ground under buildings and
+    trees, so check it before relying on it for critical work. Only the window of the
+    bounding box is read from the public cloud-optimised GeoTIFF, so no account or key
+    is needed. Heights are metres above the EGM2008 geoid. Cells without data (open sea)
+    are written as ``-9999`` and declared as no-data.
     """
-    from bmi_topography import Topography
+    import math
 
-    api_key = api_key or os.environ.get("OPENTOPOGRAPHY_API_KEY")
-    if not api_key or api_key == "YOUR API KEY HERE":
-        raise ValueError(
-            "No OpenTopography API key. Pass api_key=, or set the "
-            "OPENTOPOGRAPHY_API_KEY environment variable — free key at "
-            "https://portal.opentopography.org/"
-        )
-    os.environ["OPENTOPOGRAPHY_API_KEY"] = api_key
-
-    dem_dir = Path(dem_dir)
-    dem_dir.mkdir(parents=True, exist_ok=True)
-    west, south, east, north = aoi.bbox
-
-    glo30 = Topography(
-        dem_type="COP30", south=south, north=north, west=west, east=east,
-        output_format="GTiff", cache_dir="cache",
-    )
-    dtm_out = dem_dir / "dtm_glo30.tif"
-    shutil.copy2(glo30.fetch(), dtm_out)
-    # GLO-30 comes without a no-data value, and sea and rivers are 0 m. Declare an unused
-    # no-data value so readers that treat "no no-data value" as "0 = missing" keep them.
+    import numpy as np
     import rasterio
+    from rasterio.windows import Window, from_bounds
 
-    with rasterio.open(dtm_out, "r+", IGNORE_COG_LAYOUT_BREAK="YES") as ds:  # file is a COG; a streaming layout is not needed here
-        ds.nodata = -9999.0
+    dtm_out = Path(dtm_out)
+    dtm_out.parent.mkdir(parents=True, exist_ok=True)
+    west, south, east, north = aoi.bbox
+    try:
+        with rasterio.Env(
+            GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
+            CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
+            GDAL_HTTP_MAX_RETRY="3",
+        ):
+            with rasterio.open(GEDTM30_URL) as src:
+                win = from_bounds(west, south, east, north, src.transform)
+                col0, row0 = math.floor(win.col_off), math.floor(win.row_off)
+                col1, row1 = math.ceil(win.col_off + win.width), math.ceil(win.row_off + win.height)
+                win = Window(col0, row0, col1 - col0, row1 - row0)
+                arr = src.read(1, window=win)
+                src_nodata = src.nodata
+                transform = src.window_transform(win)
+                crs = src.crs
+    except OSError as exc:
+        raise RuntimeError(
+            f"Could not read GEDTM30 ({type(exc).__name__}). Check the internet connection "
+            "and run the cell again."
+        ) from exc
 
-    aw3d30 = Topography(
-        dem_type="AW3D30", south=south, north=north, west=west, east=east,
-        output_format="GTiff", cache_dir="cache",
-    )
-    dsm_out = dem_dir / "dsm_aw3d30.tif"
-    shutil.copy2(aw3d30.fetch(), dsm_out)
-
-    return dtm_out, dsm_out
+    arr = arr.astype("float32")
+    empty = ~np.isfinite(arr) | (np.abs(arr) > 1e30)
+    if src_nodata is not None:
+        empty |= arr == src_nodata
+    arr[empty] = DEM_NODATA
+    with rasterio.open(
+        dtm_out, "w", driver="GTiff", height=arr.shape[0], width=arr.shape[1], count=1,
+        dtype="float32", crs=crs, transform=transform, nodata=DEM_NODATA, compress="deflate",
+    ) as dst:
+        dst.write(arr, 1)
+    return dtm_out
 
 
 # ── Sentinel-2 (OpenEO / CDSE) ───────────────────────────────────────────────────
@@ -190,7 +202,7 @@ def download_landsat_bands(item, aoi: AOI, output_dir: Path, band_specs: dict = 
 def save_scene_info(
     aoi: AOI,
     output_path: Path,
-    dem_paths: tuple[Path, Path] | None = None,
+    dtm_path: Path | None = None,
     sentinel2_paths: dict[int, Path] | None = None,
     landsat_item: Any = None,
     product_level: str | None = None,
@@ -205,8 +217,8 @@ def save_scene_info(
         "local_lat": aoi.center_lat,
         "local_lon": aoi.center_lon,
     }
-    if dem_paths is not None:
-        scene_info["dem_paths"] = {"dtm": str(dem_paths[0]), "dsm": str(dem_paths[1])}
+    if dtm_path is not None:
+        scene_info["dtm_path"] = str(dtm_path)
     if sentinel2_paths is not None:
         scene_info["sentinel2_paths"] = {str(year): str(path) for year, path in sentinel2_paths.items()}
     if landsat_item is not None:
