@@ -387,3 +387,80 @@ def test_compute_scenario_delta_matches_by_midpoint_not_id(grid_streets):
     assert delta["is_new"].sum() == 1
     assert (~delta["is_new"]).sum() == len(axial_map)
     assert pd.isna(delta.loc[delta["is_new"], "choice_delta"].iloc[0])
+
+
+# ── fast segment metrics (igraph / scipy) against the plain Python loops ─────
+
+def _jittered_grid_graph(seed=3, side=7, step=100.0):
+    """Segment graph of a street grid with jittered junctions (so no two paths tie)."""
+    rng = np.random.default_rng(seed)
+    pts = {(i, j): (i * step + rng.uniform(-25, 25), j * step + rng.uniform(-25, 25))
+           for i in range(side) for j in range(side)}
+    lines = []
+    for (i, j), p in pts.items():
+        for di, dj in ((1, 0), (0, 1)):
+            q = pts.get((i + di, j + dj))
+            if q is not None and rng.random() < 0.9:
+                lines.append([p, q])
+    return ss.gdf_to_nx_graph(ss.graph_to_segment_map(_streets_gdf(lines)), id_col="seg_id")
+
+
+def _reach_reference(G, radius_m):
+    """The metric reach of one radius, computed edge by edge with networkx."""
+    node_reach = {n: set(nx.single_source_dijkstra_path_length(G, n, cutoff=radius_m, weight="weight"))
+                  for n in G.nodes()}
+    return {d["id"]: sum(e["weight"] for _, _, e in G.subgraph(node_reach[u] | node_reach[v]).edges(data=True))
+            for u, v, d in G.edges(data=True)}
+
+
+@pytest.mark.skipif(ss.ig is None, reason="igraph is not installed")
+@pytest.mark.parametrize("radius", [float("inf"), 300])
+def test_seg_choice_igraph_matches_python_loop(radius):
+    G = _jittered_grid_graph()
+    fast, slow = ss.seg_choice(G, radius), ss._seg_choice_loop(G, radius)
+    assert fast.keys() == slow.keys()
+    for seg_id in slow:
+        assert fast[seg_id] == pytest.approx(slow[seg_id])
+
+
+@pytest.mark.skipif(ss.ig is None, reason="igraph is not installed")
+def test_seg_integration_igraph_matches_python_loop():
+    G = _jittered_grid_graph()
+    fast, slow = ss.seg_integration(G), ss._seg_integration_loop(G, float("inf"))
+    for seg_id in slow:
+        assert fast[seg_id] == pytest.approx(slow[seg_id])
+
+
+def test_seg_choice_and_integration_without_igraph_use_the_loops(monkeypatch):
+    G = _jittered_grid_graph(side=4)
+    monkeypatch.setattr(ss, "ig", None)
+    monkeypatch.setattr(ss, "_IGRAPH_WARNED", False)
+    with pytest.warns(UserWarning, match="igraph is not installed"):
+        choice = ss.seg_choice(G)
+    assert choice == ss._seg_choice_loop(G, float("inf"))
+    assert ss.seg_integration(G) == ss._seg_integration_loop(G, float("inf"))
+
+
+def test_seg_integration_finite_radius_counts_steps_not_metres():
+    G = _jittered_grid_graph(side=4)
+    assert ss.seg_integration(G, radius=2) == ss._seg_integration_loop(G, 2)
+
+
+@pytest.mark.parametrize("radius", [150, 400])
+def test_seg_reach_matches_networkx_reference(radius):
+    G = _jittered_grid_graph()
+    fast = ss.seg_reach(G, radius_m=radius)
+    slow = _reach_reference(G, radius)
+    for seg_id in slow:
+        assert fast[seg_id] == pytest.approx(slow[seg_id])
+
+
+def test_seg_reach_unlimited_radius_stays_inside_each_component():
+    # Two separate street clusters: with no radius limit a segment reaches only its own cluster.
+    gdf = _streets_gdf([
+        [(0, 0), (100, 0)], [(100, 0), (100, 100)],
+        [(1000, 0), (1100, 0)], [(1100, 0), (1100, 50)],
+    ])
+    G = ss.gdf_to_nx_graph(ss.graph_to_segment_map(gdf), id_col="seg_id")
+    reach = ss.seg_reach(G, radius_m=float("inf"))
+    assert sorted(set(round(v) for v in reach.values())) == [150, 200]

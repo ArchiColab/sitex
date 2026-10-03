@@ -48,6 +48,7 @@ network = [
     "geopandas>=0.14",
     "shapely>=2.0",
     "networkx>=3.0",
+    "igraph>=0.10",        # fast segment choice and integration (spacesyntax); optional, slow loop without it
     "folium>=0.15",
     "matplotlib>=3.8",
     "ezdxf>=1.1",

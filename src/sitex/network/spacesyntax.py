@@ -11,6 +11,7 @@ questions and share helper functions, never the same underlying graph.
 from __future__ import annotations
 
 import math
+import warnings
 from collections import defaultdict
 
 import geopandas as gpd
@@ -19,6 +20,11 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString
 from shapely.ops import linemerge
+
+try:  # optional: fast segment choice and integration; without it the Python loops are used
+    import igraph as ig
+except ImportError:
+    ig = None
 
 RADII_M = {
     "R400": 400,           # pedestrian local
@@ -318,8 +324,62 @@ def axial_choice_multiscale(G: nx.Graph, radii: dict | None = None, normalize: b
 
 # ── 4. Segment metrics ───────────────────────────────────────────────────────
 
+_IGRAPH_WARNED = False
+_BLOCK = 500  # source nodes per block in the distance computations (blocks of 500 x n values)
+
+
+def _use_igraph(G: nx.Graph) -> bool:
+    """True when the igraph fast path can be used: igraph is installed and G is a simple
+    undirected graph (what ``gdf_to_nx_graph`` builds). Warns once when igraph is missing."""
+    global _IGRAPH_WARNED
+    if ig is None:
+        if not _IGRAPH_WARNED:
+            warnings.warn(
+                "igraph is not installed: segment choice and integration use a slow Python loop "
+                "(hours on a large network). Install it with: pip install igraph",
+                stacklevel=3,
+            )
+            _IGRAPH_WARNED = True
+        return False
+    return not (G.is_directed() or G.is_multigraph())
+
+
+def _segment_arrays(G: nx.Graph):
+    """(number of nodes, edge end points as node indices, edge lengths, edge ids), in the
+    order of ``G.edges(data=True)``."""
+    position = {node: i for i, node in enumerate(G.nodes())}
+    edges = list(G.edges(data=True))
+    ea = np.array([position[u] for u, _, _ in edges], dtype=int)
+    eb = np.array([position[v] for _, v, _ in edges], dtype=int)
+    w = np.array([d["weight"] for _, _, d in edges], dtype=float)
+    return len(position), ea, eb, w, [d["id"] for _, _, d in edges]
+
+
+def _to_igraph(n: int, ea: np.ndarray, eb: np.ndarray, w: np.ndarray):
+    g = ig.Graph(n=n, edges=list(zip(ea.tolist(), eb.tolist())))
+    g.es["weight"] = w.tolist()
+    return g
+
+
 def seg_choice(G: nx.Graph, radius: float = float("inf")) -> dict:
-    """Topological betweenness (hop-count shortest paths) for each segment."""
+    """Choice (betweenness) of each segment: how many shortest-path trips between junctions
+    closer than ``radius`` metres pass through it. Shortest means shortest by the edge
+    ``weight`` (street length, m); each trip is counted in both directions.
+
+    With igraph installed this is one edge-betweenness computation. Where two paths are
+    exactly equally long, igraph shares the credit between them; the Python loop used
+    without igraph counts one of them."""
+    if G.number_of_edges() == 0:
+        return {}
+    if _use_igraph(G):
+        n, ea, eb, w, ids = _segment_arrays(G)
+        cutoff = None if math.isinf(radius) else radius
+        values = _to_igraph(n, ea, eb, w).edge_betweenness(directed=False, cutoff=cutoff, weights="weight")
+        return {sid: 2 * v for sid, v in zip(ids, values)}
+    return _seg_choice_loop(G, radius)
+
+
+def _seg_choice_loop(G: nx.Graph, radius: float) -> dict:
     choice = {data["id"]: 0 for _, _, data in G.edges(data=True)}
     for source in G.nodes():
         for path in nx.single_source_dijkstra_path(G, source, cutoff=radius).values():
@@ -330,7 +390,29 @@ def seg_choice(G: nx.Graph, radius: float = float("inf")) -> dict:
 
 
 def seg_integration(G: nx.Graph, radius: float = float("inf")) -> dict:
-    """Closeness via n² / total_depth."""
+    """Closeness via n² / total_depth, where depth counts junction-to-junction steps from the
+    first end point of each segment. ``radius`` is a step count, not metres. The global
+    case (``radius`` infinite) uses igraph when it is installed."""
+    if G.number_of_edges() == 0:
+        return {}
+    if math.isinf(radius) and _use_igraph(G):
+        n, ea, eb, w, ids = _segment_arrays(G)
+        g = _to_igraph(n, ea, eb, w)
+        reached, depth = np.zeros(n), np.zeros(n)
+        for start in range(0, n, _BLOCK):
+            stop = min(start + _BLOCK, n)
+            steps = np.array(g.distances(source=list(range(start, stop))), dtype=float)
+            finite = np.isfinite(steps)
+            reached[start:stop] = finite.sum(axis=1) - 1  # without the source itself
+            depth[start:stop] = np.where(finite, steps, 0).sum(axis=1)
+        return {
+            sid: (reached[ea[i]] ** 2) / depth[ea[i]] if reached[ea[i]] > 0 and depth[ea[i]] > 0 else 0
+            for i, sid in enumerate(ids)
+        }
+    return _seg_integration_loop(G, radius)
+
+
+def _seg_integration_loop(G: nx.Graph, radius: float) -> dict:
     integ = {data["id"]: 0 for _, _, data in G.edges(data=True)}
     for u, v, data in G.edges(data=True):
         lengths = nx.single_source_shortest_path_length(G, u, cutoff=radius)
@@ -532,38 +614,41 @@ def seg_norm_integration(G: nx.Graph, radius: float = float("inf")) -> dict:
 def seg_reach(G: nx.Graph, radius_m: float = 800) -> dict:
     """Metric Reach: total street length (m) reachable within ``radius_m`` metres
     of either endpoint of a segment (union of both catchments)."""
-    node_reach = {}
-    for node in G.nodes():
-        dists = nx.single_source_dijkstra_path_length(G, node, cutoff=radius_m, weight="weight")
-        node_reach[node] = set(dists.keys())
-
-    reach = {}
-    for u, v, data in G.edges(data=True):
-        reachable = node_reach[u] | node_reach[v]
-        sub = G.subgraph(reachable)
-        reach[data["id"]] = sum(d["weight"] for _, _, d in sub.edges(data=True))
-    return reach
+    return seg_reach_multiscale(G, {"radius": radius_m})["radius"]
 
 
 def seg_reach_multiscale(G: nx.Graph, radii: dict | None = None) -> dict:
     """Metric Reach at multiple radii (default R400/R800/R2000) in one precomputed
-    pass — one Dijkstra per node up to the largest radius, then filtered per radius."""
+    pass — one Dijkstra per node up to the largest radius (scipy, in blocks of source
+    nodes), then the street length inside each catchment, per radius."""
+    from scipy.sparse import csr_matrix, vstack
+    from scipy.sparse.csgraph import dijkstra
+
     radii = radii or {"R400": 400, "R800": 800, "R2000": 2000}
+    if G.number_of_edges() == 0:
+        return {name: {} for name in radii}
+    n, ea, eb, w, ids = _segment_arrays(G)
+    adjacency = csr_matrix((np.r_[w, w], (np.r_[ea, eb], np.r_[eb, ea])), shape=(n, n))
     max_r = max(radii.values())
 
-    node_dists = {
-        node: nx.single_source_dijkstra_path_length(G, node, cutoff=max_r, weight="weight")
-        for node in G.nodes()
-    }
+    blocks = {name: [] for name in radii}  # per radius: who is within reach of whom (sparse)
+    for start in range(0, n, _BLOCK):
+        dist = dijkstra(adjacency, directed=False, indices=np.arange(start, min(start + _BLOCK, n)), limit=max_r)
+        for name, r in radii.items():
+            blocks[name].append(csr_matrix(np.isfinite(dist) & (dist <= r)))
 
     results = {}
-    for name, r in radii.items():
+    inside = np.zeros(n, dtype=bool)
+    for name in radii:
+        within = vstack(blocks.pop(name), format="csr")
         reach = {}
-        for u, v, data in G.edges(data=True):
-            reach_u = {n for n, d in node_dists[u].items() if d <= r}
-            reach_v = {n for n, d in node_dists[v].items() if d <= r}
-            sub = G.subgraph(reach_u | reach_v)
-            reach[data["id"]] = sum(d["weight"] for _, _, d in sub.edges(data=True))
+        for i, sid in enumerate(ids):
+            u, v = ea[i], eb[i]
+            nodes = np.union1d(within.indices[within.indptr[u]:within.indptr[u + 1]],
+                               within.indices[within.indptr[v]:within.indptr[v + 1]])
+            inside[nodes] = True
+            reach[sid] = float(w[inside[ea] & inside[eb]].sum())  # edges with both ends inside
+            inside[nodes] = False
         results[name] = reach
     return results
 
