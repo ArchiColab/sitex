@@ -10,6 +10,8 @@ from __future__ import annotations
 import geopandas as gpd
 import networkx as nx
 
+from sitex.core.hexgrid import build_h3_grid  # noqa: F401  (moved there; kept importable from here)
+
 # Walking speed used in every accessibility and isochrone calculation: 4.8 km/h
 # (80 m per minute), the speed Transport for London assumes for walk times in its
 # PTAL method. Transport for London (2015), *Assessing transport connectivity in
@@ -76,31 +78,16 @@ def base_map(center, zoom_start: int = 13):
     return m
 
 
-def build_h3_grid(boundary_poly, resolution: int) -> gpd.GeoDataFrame:
-    """H3 hex grid covering ``boundary_poly``. Columns: h3_id, geometry, lat, lon."""
-    import h3
-    from shapely.geometry import Polygon
-
-    exterior_coords = [(lat, lng) for lng, lat in boundary_poly.exterior.coords]
-    h3_poly = h3.LatLngPoly(exterior_coords)
-    hex_ids = h3.h3shape_to_cells(h3_poly, resolution)
-
-    hex_data = []
-    for h_id in hex_ids:
-        boundary_pts = h3.cell_to_boundary(h_id)
-        poly = Polygon([(lng, lat) for lat, lng in boundary_pts])
-        centroid = poly.centroid
-        hex_data.append({"h3_id": h_id, "geometry": poly, "lat": centroid.y, "lon": centroid.x})
-
-    return gpd.GeoDataFrame(hex_data, crs="EPSG:4326")
-
-
 def assign_origin_nodes(grid: gpd.GeoDataFrame, G: nx.MultiDiGraph) -> gpd.GeoDataFrame:
-    """Add an ``origin_node`` column: each hex's nearest graph node."""
+    """Add ``origin_node`` (each hex's nearest graph node) and ``snap_dist_m`` (distance in
+    metres from the hex centroid to that node; a large value means the hex is far from
+    any street)."""
     import osmnx as ox
 
     grid = grid.copy()
-    grid["origin_node"] = ox.nearest_nodes(G, grid["lon"].values, grid["lat"].values)
+    nodes, dists = ox.nearest_nodes(G, grid["lon"].values, grid["lat"].values, return_dist=True)
+    grid["origin_node"] = nodes
+    grid["snap_dist_m"] = dists
     return grid
 
 

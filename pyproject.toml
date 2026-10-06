@@ -32,6 +32,7 @@ arch = [
     "rasterio>=1.3",
     "trimesh>=4.0",
     "osmnx>=1.9",          # sitex.data.aoi (place -> centre for CityConfig)
+    "pyarrow>=14.0",       # Parquet / GeoParquet export of the hexagon tables
 ]
 env = [
     "rioxarray>=0.15",
@@ -43,6 +44,7 @@ env = [
     "folium>=0.15",
     "matplotlib>=3.8",
     "scikit-learn>=1.3",
+    "pyarrow>=14.0",       # Parquet export of the hexagon tables
 ]
 network = [
     "geopandas>=0.14",
@@ -87,10 +89,18 @@ data = [
     "pystac-client>=0.8",
     "planetary-computer>=1.0",
     "duckdb>=1.0",
+    "h3>=4.0",             # sitex.core.hexgrid (shared hex grid built in 00-Data-Acquisition)
     "fiona>=1.9",
     "folium>=0.15",
     "requests>=2.31",
     "s2sphere>=0.2.5",     # Open Buildings S2 tokens (sitex.data.open_buildings)
+]
+hex = [
+    "duckdb>=1.0",        # 05-INT-Hex_Integration: the hexagon database
+    "pyarrow>=14.0",      # read and write Parquet / GeoParquet
+    "geopandas>=0.14",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
 ]
 dev = [
     "pytest>=8.0",

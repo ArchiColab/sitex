@@ -96,3 +96,20 @@ def test_export_contours_dxf_shifts_to_local_origin(tmp_path):
     # Shifted near the origin, not raw UTM coordinates in the hundreds of km.
     assert points[0] == pytest.approx((100, 200, 700.0))
     assert points[1] == pytest.approx((150, 250, 700.0))
+
+
+def test_export_contours_dxf_with_to_cad_uses_converter_not_origin(tmp_path):
+    from shapely.geometry import LineString
+    import geopandas as gpd
+    import ezdxf
+
+    gdf = gpd.GeoDataFrame(
+        {"ELEV": [700.0], "geometry": [LineString([(175100, 1547200), (175150, 1547250)])]},
+        crs="EPSG:32649",
+    )
+    out_path = tmp_path / "contours_cad.dxf"
+    export_contours_dxf(gdf, out_path, 0, 0, to_cad=lambda xs, ys: ([x + 1.0 for x in xs], [y + 2.0 for y in ys]))
+
+    polylines = list(ezdxf.readfile(out_path).modelspace().query("POLYLINE"))
+    points = [(p.x, p.y, p.z) for p in polylines[0].points()]
+    assert points[0] == pytest.approx((175101.0, 1547202.0, 700.0))

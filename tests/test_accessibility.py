@@ -78,6 +78,29 @@ def test_assign_origin_nodes_picks_nearest():
     assert result["origin_node"].iloc[0] == 0  # node 0 is exactly at (108.0, 13.98)
 
 
+def test_build_h3_grid_still_importable_from_accessibility_common():
+    from sitex.core import hexgrid
+
+    assert ac.build_h3_grid is hexgrid.build_h3_grid
+
+
+def test_make_hex_grid_columns_and_area():
+    from shapely.geometry import box
+    from sitex.core.hexgrid import make_hex_grid
+
+    grid = make_hex_grid(box(108.0, 13.98, 108.01, 13.99), local_epsg=32649, resolution=9)
+    assert list(grid.columns) == ["h3_id", "lat", "lon", "area_m2", "geometry"]
+    assert grid.crs.to_epsg() == 32649
+    assert grid["area_m2"].between(90_000, 120_000).all()  # res 9 is about 0.105 km2
+
+
+def test_assign_origin_nodes_snap_dist_zero_at_node():
+    G = _grid_walk_graph()
+    grid = gpd.GeoDataFrame({"lon": [108.0], "lat": [13.98]}, geometry=[Point(108.0, 13.98)], crs="EPSG:4326")
+    result = ac.assign_origin_nodes(grid, G)
+    assert result["snap_dist_m"].iloc[0] == pytest.approx(0.0, abs=1.0)
+
+
 # ── poi_accessibility ─────────────────────────────────────────────────────────
 
 def test_compute_facility_isochrones_and_union(monkeypatch):

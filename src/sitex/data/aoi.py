@@ -23,7 +23,7 @@ import osmnx as ox
 from shapely.geometry import box
 
 from sitex.core.config import slugify
-from sitex.core.geo import utm_epsg_from_lonlat
+from sitex.core.geo import local_epsg_from_lonlat
 
 
 @dataclass
@@ -115,7 +115,7 @@ def resolve_aoi_by_place(place_name: str) -> AOI:
 
     centroid = boundary.centroid
     center_lat, center_lon = centroid.y, centroid.x
-    local_epsg = utm_epsg_from_lonlat(center_lon, center_lat)
+    local_epsg = local_epsg_from_lonlat(center_lon, center_lat)
 
     return AOI(
         bbox=bbox,
@@ -351,7 +351,7 @@ def resolve_aoi_from_map(
     west, south, east, north = bbox
 
     center_lat, center_lon = (south + north) / 2, (west + east) / 2
-    local_epsg = utm_epsg_from_lonlat(center_lon, center_lat)
+    local_epsg = local_epsg_from_lonlat(center_lon, center_lat)
 
     return AOI(
         bbox=bbox,

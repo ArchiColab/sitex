@@ -115,8 +115,13 @@ def export_contours_dxf(
     out_path: Path,
     origin_easting: float,
     origin_northing: float,
+    to_cad=None,
 ) -> None:
     """Export contour lines as 3D DXF polylines, shifted to a local CAD/UCS origin.
+
+    ``to_cad`` (from ``sitex.core.geo.cad_frame``) converts the points to another CRS
+    first, for example VN-2000, and shifts them itself; the origin arguments are then
+    not used.
 
     DXF carries no CRS metadata; subtracting a shared local origin keeps
     geometry close to (0, 0) so CAD tools (Revit/Rhino) don't hit precision
@@ -127,10 +132,12 @@ def export_contours_dxf(
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
     for _, row in gdf.iterrows():
-        pts_3d = [
-            (px - origin_easting, py - origin_northing, float(row.ELEV))
-            for px, py in row.geometry.coords
-        ]
+        xy = list(row.geometry.coords)
+        if to_cad is not None:
+            xs, ys = to_cad([p[0] for p in xy], [p[1] for p in xy])
+            pts_3d = [(float(x), float(y), float(row.ELEV)) for x, y in zip(xs, ys)]
+        else:
+            pts_3d = [(px - origin_easting, py - origin_northing, float(row.ELEV)) for px, py in xy]
         msp.add_polyline3d(pts_3d, dxfattribs={"layer": f"ELEV_{int(row.ELEV):04d}"})
     doc.saveas(out_path)
 

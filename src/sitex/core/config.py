@@ -10,7 +10,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .geo import compute_cad_origin, utm_epsg_from_lonlat
+from .geo import compute_cad_origin, local_epsg_from_lonlat
 
 
 def slugify(text: str) -> str:
@@ -41,6 +41,7 @@ class CityConfig:
     local_lon: float | None = None
     slug: str = ""
     local_epsg: int | None = None
+    vn2000_scheme: str | None = None  # None = UTM; "2025" or "epsg" = VN-2000 by province
     origin_round_m: int = 1000
     data_dir: Path = field(default_factory=lambda: Path("data"))
     output_dir: Path = field(default_factory=lambda: Path("outputs"))
@@ -65,7 +66,9 @@ class CityConfig:
             # full "city, province, country" geocode string.
             self.slug = slugify(self.place_name.split(",")[0])
         if self.local_epsg is None:
-            self.local_epsg = utm_epsg_from_lonlat(self.local_lon, self.local_lat)
+            self.local_epsg = local_epsg_from_lonlat(
+                self.local_lon, self.local_lat, self.vn2000_scheme
+            )
         self.origin_easting, self.origin_northing = compute_cad_origin(
             self.local_lon, self.local_lat, self.local_epsg, self.origin_round_m
         )

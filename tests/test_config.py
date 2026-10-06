@@ -20,7 +20,7 @@ def test_cityconfig_derives_epsg_and_origin():
         local_lat=13.98,
         local_lon=108.00,
     )
-    assert cfg.local_epsg == 32649
+    assert cfg.local_epsg == 32649   # UTM zone 49N
     easting, northing = cfg.origin
     assert easting % 1000 == 0
     assert northing % 1000 == 0
@@ -36,3 +36,13 @@ def test_cityconfig_explicit_slug_and_epsg_are_respected():
     )
     assert cfg.slug == "danang"
     assert cfg.local_epsg == 32648
+
+
+def test_cityconfig_vn2000_scheme_option_selects_pre_2025_zone():
+    cfg = CityConfig(
+        place_name="Pleiku, Gia Lai, Vietnam",
+        local_lat=13.98,
+        local_lon=108.00,
+        vn2000_scheme="epsg",
+    )
+    assert cfg.local_epsg == 9218

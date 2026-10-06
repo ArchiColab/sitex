@@ -16,6 +16,7 @@ import rasterio
 import rasterio.mask
 from shapely.geometry import shape
 
+from sitex.core.geo import utm_epsg_from_lonlat
 from sitex.data.aoi import AOI
 
 # ── DEM (GEDTM30 terrain model) ─────────────────────────────────────────────────
@@ -104,7 +105,7 @@ def download_sentinel2_composite(
     """Server-side median composite over ``[start_date, end_date)``. Band order in the
     output GeoTIFF matches ``bands`` (band 1 = ``bands[0]``, etc).
 
-    Forces the output CRS to ``aoi.local_epsg`` via ``resample_spatial`` instead of the
+    Forces the output CRS to the UTM zone of the AOI centre via ``resample_spatial`` instead of the
     backend's default, which returns whichever UTM tile the AOI happens to fall in —
     not guaranteed stable if the AOI sits near a UTM zone boundary.
     """
@@ -116,7 +117,9 @@ def download_sentinel2_composite(
         bands=bands,
         max_cloud_cover=max_cloud,
     )
-    cube = cube.resample_spatial(resolution=10, projection=aoi.local_epsg)
+    # UTM, not aoi.local_epsg: inside Vietnam that is a VN-2000 code (e.g. 9217), which the
+    # Copernicus server does not know ("UnknownAuthorityCodeException").
+    cube = cube.resample_spatial(resolution=10, projection=utm_epsg_from_lonlat(aoi.center_lon, aoi.center_lat))
     output_path = Path(output_path)
     cube.reduce_temporal("median").download(str(output_path), format="GTiff")
     return output_path

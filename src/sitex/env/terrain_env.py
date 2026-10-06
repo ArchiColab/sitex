@@ -15,7 +15,7 @@ import xarray as xr
 from scipy import ndimage
 
 from ..core.config import CityConfig
-from ..core.geo import utm_epsg_from_lonlat
+from ..core.geo import local_epsg_from_lonlat
 
 
 def load_dtm(dtm_path: Path) -> xr.DataArray:
@@ -64,7 +64,7 @@ def pixel_area_m2(dtm: xr.DataArray, local_epsg: int | None = None) -> float:
     """
     if local_epsg is None:
         minx, miny, maxx, maxy = dtm.rio.bounds()
-        local_epsg = utm_epsg_from_lonlat((minx + maxx) / 2, (miny + maxy) / 2)
+        local_epsg = local_epsg_from_lonlat((minx + maxx) / 2, (miny + maxy) / 2)
     res = dtm.rio.reproject(f"EPSG:{local_epsg}").rio.resolution()
     return abs(res[0] * res[1])
 

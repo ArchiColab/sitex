@@ -452,6 +452,41 @@ def count_buildings(areas: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame, col: s
     return out
 
 
+def count_facilities_by_hex(G: nx.MultiDiGraph, hexes: gpd.GeoDataFrame, facilities: gpd.GeoDataFrame,
+                            minutes: float = 15) -> pd.DataFrame:
+    """Number of facilities within ``minutes`` of walking, from the centre of every hexagon.
+
+    Each hexagon centre is attached to its nearest junction, and walked from there
+    along the network (like the facilities in :func:`snap_facilities`). ``facilities``
+    must be snapped already (column ``node``); a facility listed twice counts once.
+
+    Returns one row per hexagon of ``hexes``: ``h3_id``, ``n_amenities`` and
+    ``snap_dist_m`` (metres from the hexagon centre to its junction; a large value
+    means the hexagon is far from any street, so its count says little).
+    """
+    import osmnx as ox
+
+    centres = hexes.to_crs(G.graph["crs"]).geometry.centroid
+    origin, snap = ox.nearest_nodes(G, centres.x.values, centres.y.values, return_dist=True)
+
+    unique = facilities.drop_duplicates("id") if "id" in facilities.columns else facilities
+    per_node: dict = {}
+    for node in unique["node"]:
+        per_node[node] = per_node.get(node, 0) + 1
+
+    reached: dict = {}  # junction -> facilities within reach; the network is two-way, so
+    for node, n in per_node.items():  # "facility reaches junction" equals "junction reaches facility"
+        times = nx.single_source_dijkstra_path_length(G, node, cutoff=minutes * 60, weight="travel_time")
+        for junction in times:
+            reached[junction] = reached.get(junction, 0) + n
+
+    return pd.DataFrame({
+        "h3_id": hexes["h3_id"].values,
+        "n_amenities": [reached.get(node, 0) for node in origin],
+        "snap_dist_m": np.round(snap, 1),
+    })
+
+
 # ── 4. Export & preview ──────────────────────────────────────────────────────
 
 def export_geopackage(path: Path, layers: dict[str, gpd.GeoDataFrame]) -> Path:
