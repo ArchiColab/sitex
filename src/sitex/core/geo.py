@@ -50,8 +50,8 @@ def vn2000_epsg_from_lonlat(
     with two zone codes:
 
     - ``scheme="2025"`` (default): the meridian of the new province the old one was
-      merged into (Thong tu 24/2025/TT-BNNMT, in force since 1 July 2025; table cross-checked between
-      tracdiahoangphat.com/kinh-tuyen-truc-cac-tinh and dodacrtk.com).
+      merged into (Thong tu 24/2025/TT-BNNMT, in force since 1 July 2025; values checked against the
+      official list of the 34 provinces and the GIS.vn projection files).
     - ``scheme="epsg"``: the pre-2025 assignment, from the area-of-use lists of the
       EPSG registry (provinces not named there use the 5897 / 5898 longitude-band zones).
 
