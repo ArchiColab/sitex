@@ -87,6 +87,44 @@ def _read_lines(path: Path, local_epsg: int) -> gpd.GeoDataFrame:
     return gdf[["geometry"]]
 
 
+def crs_from_files(streets: Path, others: dict[str, Path | None]) -> int:
+    """EPSG code of the street file, after checking that every other file (``{name: path}``,
+    e.g. the facilities, the buildings) is in the same CRS.
+
+    The CRS is read from the files, never typed in. Stops with a plain message when a file
+    has no CRS, when the street CRS is in degrees (lengths would not be metres), or when
+    the files differ. Prints one line per file."""
+    import fiona
+
+    def read_crs(path: Path):
+        path = Path(path)
+        layers = fiona.listlayers(path)
+        layer = "edges" if "edges" in layers else layers[0]
+        return gpd.read_file(path, layer=layer, rows=1).crs
+
+    found = {"streets": (Path(streets), read_crs(streets))}
+    found.update({name: (Path(p), read_crs(p)) for name, p in others.items() if p is not None})
+
+    for name, (path, crs) in found.items():
+        print(f"  {name:<10} {path.name}: {crs.to_string() if crs else 'NO CRS'}")
+        if crs is None:
+            raise ValueError(f"{path.name} has no CRS. Open it in QGIS, set the layer CRS and save it again.")
+    street_crs = found["streets"][1]
+    if not street_crs.is_projected or street_crs.to_epsg() is None:
+        raise ValueError(
+            f"The street file is in {street_crs.to_string()}, which is not a metric EPSG CRS "
+            "(distances would not be metres). In QGIS, reproject it to a UTM zone and save it."
+        )
+    for name, (path, crs) in found.items():
+        if not crs.equals(street_crs):
+            raise ValueError(
+                f"{path.name} is in {crs.to_string()} but the streets are in {street_crs.to_string()}. "
+                "All layers must be in the same CRS: in QGIS, right-click the layer > Export > "
+                f"Save Features As... and choose {street_crs.to_string()}."
+            )
+    return street_crs.to_epsg()
+
+
 def graph_from_lines(
     lines: gpd.GeoSeries, local_epsg: int, walk_speed_kmh: float = DEFAULT_WALK_SPEED_KMH, snap_m: float = 1.0,
 ) -> nx.MultiDiGraph:
@@ -397,6 +435,7 @@ def facility_service_areas(
 
 def nearest_facility_catchments(
     G: nx.MultiDiGraph, facilities: gpd.GeoDataFrame, max_distance_m: float, shape: str = "concave",
+    fill_gaps_m: float = 150,
 ) -> gpd.GeoDataFrame:
     """Split the walkable area between facilities: every street junction goes to
     its *nearest* facility along the network (within ``max_distance_m``), so the
@@ -405,7 +444,11 @@ def nearest_facility_catchments(
     One network search from all facilities at once; each reached junction gets a
     Voronoi cell, and the cells are merged per facility. Each facility's area is then
     clipped to the hull of its own junctions (``shape``, as for the isochrones), so it
-    does not spread past the last junction it reaches.
+    does not spread past the last junction it reaches. Because each hull follows only its
+    own streets, thin strips are left between neighbouring catchments; gaps up to
+    ``fill_gaps_m`` wide (0 = off) are closed, and every filled piece goes to the facility
+    whose Voronoi cell it lies in. The outer edge is not moved, so land beyond
+    ``max_distance_m`` stays outside.
     Columns: ``id, name, amenity, n_facilities_here, area_ha, geometry``.
     """
     by_node: dict = {}
@@ -422,15 +465,26 @@ def nearest_facility_catchments(
     pt_idx, cell_idx = tree.query(pts, predicate="within")
     cell_owner = dict(zip(cell_idx, [owner[i] for i in pt_idx]))
 
-    rows = []
-    for node, facs in by_node.items():
+    parts = {}
+    for node in by_node:
         mine = [cells[c] for c, o in cell_owner.items() if o == node]
         hull = _hull(G, [n for n, o in zip(nodes, owner) if o == node], shape)
         if not mine or hull is None:
             continue
-        area = unary_union(mine).intersection(hull)
-        if area.is_empty:
-            continue
+        cell = unary_union(mine)
+        area = cell.intersection(hull)
+        if not area.is_empty:
+            parts[node] = (cell, area)
+
+    if fill_gaps_m and parts:
+        covered = unary_union([a for _, a in parts.values()])
+        r = fill_gaps_m / 2
+        gaps = covered.buffer(r).buffer(-r).difference(covered)
+        parts = {n: (cell, area.union(cell.intersection(gaps))) for n, (cell, area) in parts.items()}
+
+    rows = []
+    for node, (_, area) in parts.items():
+        facs = by_node[node]
         fac = facs[0]
         rows.append({
             "id": fac["id"], "name": fac["name"], "amenity": fac.get("amenity"),

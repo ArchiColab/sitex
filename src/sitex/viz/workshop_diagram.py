@@ -13,9 +13,9 @@ The right panel is always the focused site's ``{site_slug}_site.obj``, as export
 ``01-SITE-3D_Model.ipynb`` — the only 3D model made, since 3D is produced for the
 focused site alone, never for the whole ward.
 
-Paths are derived from the caller's own ``CityConfig`` (``city.data_dir``,
-``city.output_dir``, ``city.slug``), the same convention every other ``sitex.viz``
-module uses.
+Which files to read is set by the caller in a :class:`DiagramInputs` (plain paths: no
+place name, no slug). The metres CRS used for the site size is read from the NDVI raster
+(:func:`metric_crs`); nothing is geocoded or typed in.
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from rasterio.mask import mask as rio_mask
 
-from ..core.config import CityConfig
 from ..data.landcover import WC_CLASSES
 
 # All vector/raster layers in the exploded stack are read into this CRS for plotting.
@@ -56,9 +55,9 @@ class LayerStyle:
 @dataclass
 class WorkshopDiagramConfig:
     """Style/geometry knobs for the diagrams -- *not* file locations. Which files to
-    read comes from the caller's own ``CityConfig`` instead (see module docstring),
-    except ``ndvi_path``/``lst_path`` (which NDVI date or Landsat scene to show is a
-    per-run choice) and ``site_slug`` (which focused site's model to show).
+    read is set in :class:`DiagramInputs` instead, except ``ndvi_path``/``lst_path``
+    (which NDVI date or Landsat scene to show is a per-run choice) and ``site_slug``
+    (which focused site's model to show).
     """
 
     ndvi_path: Path
@@ -146,71 +145,65 @@ class WorkshopDiagramConfig:
 # Paths
 # ---------------------------------------------------------------------------
 
-def _boundary_path(city: CityConfig) -> Path:
-    return city.data_dir / "overture" / f"{city.slug}_boundary.gpkg"
+@dataclass
+class DiagramInputs:
+    """The files the diagrams read, as plain paths set by the caller.
+
+    ``site_dir`` is the folder holding the focused site's ``{site_slug}_site.obj``,
+    ``_terrain.obj`` and ``_landcover.obj`` (exports of ``01-SITE-3D_Model.ipynb``).
+    """
+
+    boundary: Path
+    buildings: Path
+    streets: Path
+    places: Path
+    dem: Path
+    landcover: Path
+    canopy: Path
+    amenities: Path
+    green: Path
+    reach: Path
+    site_dir: Path
 
 
-def _buildings_path(city: CityConfig) -> Path:
-    return city.data_dir / "overture" / f"{city.slug}_buildings.gpkg"
-
-
-def _streets_path(city: CityConfig) -> Path:
-    return city.data_dir / "osm" / f"{city.slug}_streets.gpkg"
-
-
-def _places_path(city: CityConfig) -> Path:
-    return city.data_dir / "overture" / f"{city.slug}_places.gpkg"
-
-
-def _dem_path(city: CityConfig) -> Path:
-    return city.data_dir / "dem" / "dtm_gedtm30.tif"
-
-
-def _landcover_path(city: CityConfig) -> Path:
-    return city.data_dir / "landcover" / f"esa_worldcover_2021_{city.slug}.tif"
-
-
-def _canopy_path(city: CityConfig) -> Path:
-    return city.data_dir / "canopy_height" / f"canopy_height_chmv2_{city.slug}.tif"
-
-
-def _amenities_path(city: CityConfig) -> Path:
-    return city.data_dir / "gdf" / f"pois_amenities_{city.slug}.gpkg"
-
-
-def _green_path(city: CityConfig) -> Path:
-    return city.data_dir / "gdf" / "green_accessibility_grid.gpkg"
-
-
-def _reach_path(city: CityConfig) -> Path:
-    return city.data_dir / "gdf" / "segment_results.gpkg"
-
-
-def site_obj_path(city: CityConfig, style: WorkshopDiagramConfig, part: str = "site") -> Path:
+def site_obj_path(inputs: DiagramInputs, style: WorkshopDiagramConfig, part: str = "site") -> Path:
     """``part`` = "site" (buildings), "terrain" or "landcover"."""
-    return city.output_dir / f"{style.site_slug}_{part}.obj"
+    return Path(inputs.site_dir) / f"{style.site_slug}_{part}.obj"
 
 
-def input_paths(city: CityConfig, style: WorkshopDiagramConfig, stack: str) -> dict[str, Path]:
+def input_paths(inputs: DiagramInputs, style: WorkshopDiagramConfig, stack: str) -> dict[str, Path]:
     """Every file one diagram reads, for a quick existence check before rendering."""
-    common = {"boundary": _boundary_path(city), "site model": site_obj_path(city, style)}
+    common = {"boundary": inputs.boundary, "site model": site_obj_path(inputs, style)}
     if style.site_show_terrain:
-        common["site terrain"] = site_obj_path(city, style, "terrain")
+        common["site terrain"] = site_obj_path(inputs, style, "terrain")
     if style.site_show_landcover:
-        common["site land cover"] = site_obj_path(city, style, "landcover")
+        common["site land cover"] = site_obj_path(inputs, style, "landcover")
     if stack == "environment":
         layers = {
-            "buildings": _buildings_path(city), "DEM": _dem_path(city), "land cover": _landcover_path(city),
-            "canopy height": _canopy_path(city), "NDVI": style.ndvi_path, "UHI": style.lst_path,
+            "buildings": inputs.buildings, "DEM": inputs.dem, "land cover": inputs.landcover,
+            "canopy height": inputs.canopy, "NDVI": style.ndvi_path, "UHI": style.lst_path,
         }
     elif stack == "network":
         layers = {
-            "streets": _streets_path(city), "places": _places_path(city), "amenities": _amenities_path(city),
-            "green accessibility": _green_path(city), "space syntax": _reach_path(city),
+            "streets": inputs.streets, "places": inputs.places, "amenities": inputs.amenities,
+            "green accessibility": inputs.green, "space syntax": inputs.reach,
         }
     else:
         raise ValueError(f"stack must be one of {STACKS}, got {stack!r}")
     return {**common, **layers}
+
+
+def metric_crs(style: WorkshopDiagramConfig):
+    """The metres CRS for the site size, read from the NDVI raster (a UTM zone). Stops
+    if that raster has no CRS or is in degrees."""
+    with rasterio.open(style.ndvi_path) as src:
+        crs = src.crs
+    if crs is None or not crs.is_projected:
+        raise ValueError(
+            f"{Path(style.ndvi_path).name} is in {crs}, which is not a metric CRS. "
+            "Use an NDVI raster in a UTM zone (as made by 02-ENV-Urban_Change_Detection)."
+        )
+    return crs
 
 
 # ---------------------------------------------------------------------------
@@ -218,35 +211,36 @@ def input_paths(city: CityConfig, style: WorkshopDiagramConfig, stack: str) -> d
 # ---------------------------------------------------------------------------
 
 def _read(path: Path, preferred_layer: str | None = None) -> gpd.GeoDataFrame:
-    """Read a vector file; in a multi-layer GeoPackage take ``preferred_layer`` when
-    present (a stale layer from an old slug can otherwise be the default)."""
+    """Read a vector file; in a multi-layer GeoPackage take ``preferred_layer`` (default:
+    the layer named like the file) when present, otherwise the first layer."""
     layers = fiona.listlayers(path)
-    layer = preferred_layer if preferred_layer in layers else layers[0]
+    preferred = preferred_layer or Path(path).stem
+    layer = preferred if preferred in layers else layers[0]
     return gpd.read_file(path, layer=layer)
 
 
-def load_boundary(city: CityConfig) -> gpd.GeoDataFrame:
-    return _read(_boundary_path(city), f"{city.slug}_boundary").to_crs(TARGET_CRS)
+def load_boundary(inputs: DiagramInputs) -> gpd.GeoDataFrame:
+    return _read(inputs.boundary).to_crs(TARGET_CRS)
 
 
 def _clipped(path: Path, boundary: gpd.GeoDataFrame, layer: str | None = None) -> gpd.GeoDataFrame:
     return gpd.clip(_read(path, layer).to_crs(TARGET_CRS), boundary)
 
 
-def load_buildings(city: CityConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    return _clipped(_buildings_path(city), boundary, f"{city.slug}_buildings")
+def load_buildings(inputs: DiagramInputs, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    return _clipped(inputs.buildings, boundary)
 
 
-def load_streets(city: CityConfig, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    return _clipped(_streets_path(city), boundary, style.streets_layer)
+def load_streets(inputs: DiagramInputs, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    return _clipped(inputs.streets, boundary, style.streets_layer)
 
 
-def load_places(city: CityConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    return _clipped(_places_path(city), boundary, f"{city.slug}_places")
+def load_places(inputs: DiagramInputs, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    return _clipped(inputs.places, boundary)
 
 
-def load_amenities(city: CityConfig, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    gdf = _clipped(_amenities_path(city), boundary)
+def load_amenities(inputs: DiagramInputs, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    gdf = _clipped(inputs.amenities, boundary)
     return gdf[(gdf["keep"] == 1) & gdf["amenity_group"].isin(style.amenity_colors)]
 
 
@@ -301,9 +295,9 @@ def hillshade(elevation: np.ndarray, cellsize: float = 30.0, azimuth: float = 31
     return np.clip(shaded, 0, 1)
 
 
-def site_extent_m(boundary: gpd.GeoDataFrame, local_epsg: int) -> tuple:
+def site_extent_m(boundary: gpd.GeoDataFrame, metric_crs) -> tuple:
     """Real-world width/height of the site in meters, used for the 3D box aspect."""
-    minx, miny, maxx, maxy = boundary.to_crs(epsg=local_epsg).total_bounds
+    minx, miny, maxx, maxy = boundary.to_crs(metric_crs.to_wkt() if hasattr(metric_crs, "to_wkt") else metric_crs).total_bounds
     return maxx - minx, maxy - miny
 
 
@@ -456,11 +450,11 @@ class StackLayer:
     frame: bool = True
 
 
-def environment_layers(city: CityConfig, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> list[StackLayer]:
-    buildings = load_buildings(city, boundary)
-    dem = load_raster(_dem_path(city), boundary)
-    lc = load_raster(_landcover_path(city), boundary, max_px=style.raster_max_px, categorical=True)
-    chm_x, chm_y, chm = load_raster(_canopy_path(city), boundary, max_px=style.raster_max_px)
+def environment_layers(inputs: DiagramInputs, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> list[StackLayer]:
+    buildings = load_buildings(inputs, boundary)
+    dem = load_raster(inputs.dem, boundary)
+    lc = load_raster(inputs.landcover, boundary, max_px=style.raster_max_px, categorical=True)
+    chm_x, chm_y, chm = load_raster(inputs.canopy, boundary, max_px=style.raster_max_px)
     chm[chm <= 0] = np.nan  # no canopy: leave the plate empty there
     ndvi = load_raster(style.ndvi_path, boundary, max_px=style.raster_max_px)
     lst = load_raster(style.lst_path, boundary, max_px=style.raster_max_px)
@@ -475,17 +469,17 @@ def environment_layers(city: CityConfig, style: WorkshopDiagramConfig, boundary:
     ]
 
 
-def network_layers(city: CityConfig, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> list[StackLayer]:
+def network_layers(inputs: DiagramInputs, style: WorkshopDiagramConfig, boundary: gpd.GeoDataFrame) -> list[StackLayer]:
     s = style
-    streets = load_streets(city, style, boundary)
-    places = load_places(city, boundary)
-    amenities = load_amenities(city, style, boundary)
+    streets = load_streets(inputs, style, boundary)
+    places = load_places(inputs, boundary)
+    amenities = load_amenities(inputs, style, boundary)
     amenity_colors = amenities["amenity_group"].map(s.amenity_colors).tolist()
 
-    green = _clipped(_green_path(city), boundary)
+    green = _clipped(inputs.green, boundary)
     green_colors = _values_to_colors(green["access_public_min"], s.green.cmap, 0, s.green_max_min)
 
-    reach = _clipped(_reach_path(city), boundary)
+    reach = _clipped(inputs.reach, boundary)
     rv = reach[s.reach_column].to_numpy(dtype="float64")
     lo, hi = np.nanpercentile(rv, [2, 98])
     reach_colors = _values_to_colors(rv, s.reach.cmap, lo, hi)
@@ -499,16 +493,16 @@ def network_layers(city: CityConfig, style: WorkshopDiagramConfig, boundary: gpd
     ]
 
 
-def build_stack_panel(fig, ax, city: CityConfig, style: WorkshopDiagramConfig, stack: str = "environment") -> None:
-    boundary = load_boundary(city)
+def build_stack_panel(fig, ax, inputs: DiagramInputs, style: WorkshopDiagramConfig, stack: str = "environment") -> None:
+    boundary = load_boundary(inputs)
     if stack == "environment":
-        layers = environment_layers(city, style, boundary)
+        layers = environment_layers(inputs, style, boundary)
     elif stack == "network":
-        layers = network_layers(city, style, boundary)
+        layers = network_layers(inputs, style, boundary)
     else:
         raise ValueError(f"stack must be one of {STACKS}, got {stack!r}")
 
-    dx, dy = site_extent_m(boundary, city.local_epsg)
+    dx, dy = site_extent_m(boundary, metric_crs(style))
     gap = dy * style.layer_gap_frac
     z_levels = [i * gap for i in range(len(layers))]
     ax.set_box_aspect((dx, dy, (len(layers) - 1) * gap * 1.15))
@@ -566,27 +560,27 @@ def _shaded_face_colors(tris: np.ndarray, color: str, light_dir=(-0.4, -0.6, 0.7
     return rgba
 
 
-def build_site_panel(fig, ax, city: CityConfig, style: WorkshopDiagramConfig) -> None:
+def build_site_panel(fig, ax, inputs: DiagramInputs, style: WorkshopDiagramConfig) -> None:
     """Terrain, land cover and buildings of the focused site. Ground and buildings are
     two collections drawn in a fixed order (ground first): matplotlib sorts faces by
     their centre, and the long, thin land-cover triangles would otherwise be drawn over
     small buildings. From an above-ground camera the buildings are always in front."""
     tris_all, colors_all = [], []
 
-    if style.site_show_terrain and site_obj_path(city, style, "terrain").exists():
-        for tris in load_obj(site_obj_path(city, style, "terrain")).values():
+    if style.site_show_terrain and site_obj_path(inputs, style, "terrain").exists():
+        for tris in load_obj(site_obj_path(inputs, style, "terrain")).values():
             tris_all.append(tris)
             colors_all.append(_shaded_face_colors(tris, style.site_terrain_color))
 
-    if style.site_show_landcover and site_obj_path(city, style, "landcover").exists():
-        lc_path = site_obj_path(city, style, "landcover")
+    if style.site_show_landcover and site_obj_path(inputs, style, "landcover").exists():
+        lc_path = site_obj_path(inputs, style, "landcover")
         mtl = load_mtl_colors(lc_path)
         for name, tris in load_obj(lc_path).items():
             tris_all.append(tris)
             # flat colour: nearly horizontal, and shading its thin triangles shows streaks
             colors_all.append(np.tile((*mtl.get(name, (0.7, 0.7, 0.7)), 1.0), (len(tris), 1)))
 
-    buildings = load_obj(site_obj_path(city, style))
+    buildings = load_obj(site_obj_path(inputs, style))
     b_tris = np.concatenate(list(buildings.values()))
     b_colors = np.concatenate([_shaded_face_colors(t, _site_color(style, n)) for n, t in buildings.items()])
 
@@ -614,9 +608,9 @@ def build_site_panel(fig, ax, city: CityConfig, style: WorkshopDiagramConfig) ->
 
     handles = [Line2D([], [], marker="s", linestyle="", color=_site_color(style, n),
                       label=n.replace("BLDG_", "").title()) for n in buildings]
-    if style.site_show_landcover and site_obj_path(city, style, "landcover").exists():
+    if style.site_show_landcover and site_obj_path(inputs, style, "landcover").exists():
         handles += [Line2D([], [], marker="s", linestyle="", color=c, label=n.replace("LC_", "").replace("_", " ").title())
-                    for n, c in load_mtl_colors(site_obj_path(city, style, "landcover")).items()]
+                    for n, c in load_mtl_colors(site_obj_path(inputs, style, "landcover")).items()]
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(cx, screen[:, 1].min() + style.site_legend_dy),
                ncol=min(len(handles), 4), fontsize=style.legend_fontsize, frameon=False, borderaxespad=0)
 
@@ -625,19 +619,18 @@ def build_site_panel(fig, ax, city: CityConfig, style: WorkshopDiagramConfig) ->
 # Figure assembly
 # ---------------------------------------------------------------------------
 
-def build_figure(city: CityConfig, style: WorkshopDiagramConfig, stack: str = "environment", place_label: str | None = None):
+def build_figure(inputs: DiagramInputs, style: WorkshopDiagramConfig, stack: str = "environment", place_label: str = ""):
     """Build one two-panel figure: the ``stack`` on the left, the site model on the
-    right. ``place_label`` defaults to the locality part of ``city.place_name``."""
-    label = place_label or city.place_name.split(",")[0]
+    right. ``place_label`` is added to the main title (``"{title} — {place_label}"``); empty = none."""
 
     fig = plt.figure(figsize=style.figsize)
     gs = fig.add_gridspec(1, 2, width_ratios=(1.5, 1), wspace=0.02)
     ax_stack = fig.add_subplot(gs[0, 0], projection="3d")
     ax_site = fig.add_subplot(gs[0, 1], projection="3d")
 
-    build_stack_panel(fig, ax_stack, city, style, stack)
-    build_site_panel(fig, ax_site, city, style)
+    build_stack_panel(fig, ax_stack, inputs, style, stack)
+    build_site_panel(fig, ax_site, inputs, style)
 
-    fig.suptitle(f"{style.stack_titles[stack]} — {label}", fontsize=style.suptitle_fontsize,
+    fig.suptitle(f"{style.stack_titles[stack]} — {place_label}" if place_label else style.stack_titles[stack], fontsize=style.suptitle_fontsize,
                  fontweight="bold", y=style.suptitle_y)
     return fig, (ax_stack, ax_site)
