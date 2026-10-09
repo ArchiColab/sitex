@@ -57,6 +57,7 @@ network = [
     "ezdxf>=1.1",
     "pandas>=2.0",
     "osmnx>=1.9",
+    "fiona>=1.9",          # sitex.network.isochrones reads layers with fiona
     "rasterio>=1.3",       # WorldCover green patches (green_accessibility)
     "h3>=4.0",
     "inequality>=1.0",
@@ -77,6 +78,7 @@ viz = [
     "pandas>=2.0",
     "trimesh>=4.0",
     "plotly>=5.20",
+    "fiona>=1.9",          # sitex.viz.workshop_diagram reads layers with fiona
 ]
 data = [
     "geopandas>=0.14",
