@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import rasterio
@@ -16,7 +17,8 @@ import rasterio.mask
 from rasterio.merge import merge as rio_merge
 from shapely.geometry import shape
 
-from sitex.data.aoi import AOI
+if TYPE_CHECKING:  # AOI pulls in osmnx; the viz extra only needs WC_CLASSES
+    from sitex.data.aoi import AOI
 
 WC_BASE_URL = "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map"
 
